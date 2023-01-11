@@ -1,23 +1,24 @@
-from signal import SIGINT, SIGTERM, SIGQUIT, signal
-import signal
-import time
-import threading
-import logging
-import sys
-from redis import asyncio as aioredis
-from functools import wraps
-from time import sleep
-from multiprocessing import Process
-from settings.conf import settings
-from utils.redis_conn import RedisPool
-from helpers.redis_keys import get_epoch_generator_last_epoch, get_epoch_generator_epoch_history
-from setproctitle import setproctitle
-from exceptions import GenericExitOnSignal
-from helpers.rpc_helper import ConstructRPC
-from helpers.message_models import RPCNodesObject
-from utils.default_logger import logger
 import asyncio
 import json
+import signal
+import sys
+import threading
+import time
+from functools import wraps
+from multiprocessing import Process
+from signal import SIGINT, SIGTERM, SIGQUIT, signal
+from time import sleep
+
+from redis import asyncio as aioredis
+from setproctitle import setproctitle
+
+from exceptions import GenericExitOnSignal
+from helpers.message_models import RPCNodesObject
+from helpers.redis_keys import get_epoch_generator_last_epoch, get_epoch_generator_epoch_history
+from helpers.rpc_helper import ConstructRPC
+from settings.conf import settings
+from utils.default_logger import logger
+from utils.redis_conn import RedisPool
 
 
 def chunks(start_idx, stop_idx, n):

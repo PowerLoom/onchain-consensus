@@ -26,17 +26,25 @@ def get_project_epoch_specific_accepted_peers_key(project_id, epoch_end):
 def get_epoch_generator_last_epoch():
     return "epochGenerator:lastEpoch"
 
+
 def get_epoch_generator_epoch_history():
     return "epochGenerator:epochHistory"
+
 
 def get_snapshotter_issues_reported_key(snapshotter_id):
     return f'snapshotterData:{snapshotter_id}:issuesReported'
 
+
+# string key:value pair that holds jsonified metadata on UUID peers
 def get_snapshotter_info_key(alias):
     return f'snapshotterInfo:{alias}'
 
+
+# SET of allowed snapshotters by UUID
 def get_snapshotter_info_allowed_snapshotters_key():
     return 'snapshotterInfo:allowedSnapshotters'
 
+
+# HTABLE mapping snapshotter UUID -> snapshotter alias
 def get_snapshotter_info_snapshotter_mapping_key():
     return 'snapshotterInfo:snapshotterMapping'

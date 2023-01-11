@@ -117,6 +117,9 @@ async def get_reader_redis_conn():
 
 
 class RedisPool:
+    reader_redis_pool: aioredis.Redis
+    writer_redis_pool: aioredis.Redis
+
     def __init__(
             self,
             writer_redis_conf: RedisConfig = settings_conf.redis,
@@ -124,8 +127,6 @@ class RedisPool:
             pool_size=200,
             replication_mode=True
     ):
-        self.reader_redis_pool = None
-        self.writer_redis_pool = None
         self._writer_redis_conf = writer_redis_conf
         self._reader_redis_conf = reader_redis_conf
         self._pool_size = pool_size

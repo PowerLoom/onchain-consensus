@@ -1,15 +1,19 @@
+import asyncio
 import json
 import uuid
-import click
-from data_models import SnapshotterMetadata
-from utils.redis_conn import RedisPool
-import asyncio
 from functools import wraps
-from settings.conf import settings
+
+# TODO: upgrade to typer. click is too ancient
+import click
 from pydantic import ValidationError
-from helpers.redis_keys import get_snapshotter_info_key
+
+from data_models import SnapshotterMetadata, UserStatusEnum
 from helpers.redis_keys import get_snapshotter_info_allowed_snapshotters_key
+from helpers.redis_keys import get_snapshotter_info_key
 from helpers.redis_keys import get_snapshotter_info_snapshotter_mapping_key
+from settings.conf import settings
+from utils.redis_conn import RedisPool
+
 
 # decorator to make it compatible with asyncio
 # taken from https://github.com/pallets/click/issues/85#issuecomment-503464628
@@ -21,17 +25,21 @@ def coro(f):
     return wrapper
 
 
-metadata_sample = json.dumps({
-    "name":"",
-    "email":"",
-    "alias":""
-}, indent=4)
+metadata_sample = SnapshotterMetadata(
+    rate_limit=settings.rate_limit,
+    active=UserStatusEnum.active,
+    email='xcz@0bv.com',
+    alias='HappySnapper',
+    name='HappySnapper',
+    uuid=uuid.UUID(int=0).__str__()
+).json(exclude={'callsCount', 'throttledCount', 'next_reset_at'})
+
 
 @click.command()
 @coro
 @click.option('--sample-metadata', is_flag=True, help='Show sample metadata in json format')
 @click.argument('metadata', type=str, default=None, required=False)
-async def add_snapshotter(metadata:str, sample_metadata:bool):
+async def add_snapshotter(metadata: str, sample_metadata: bool):
     """
     CLI to add new snapshotter.
     """
@@ -53,7 +61,7 @@ async def add_snapshotter(metadata:str, sample_metadata:bool):
         writer_redis_pool = redis_pool.writer_redis_pool
         reader_redis_pool = redis_pool.reader_redis_pool
 
-        #Load metadata 
+        # Load metadata
         json_data = json.loads(metadata)
         try:
             metadata = SnapshotterMetadata(**json_data)
@@ -65,8 +73,8 @@ async def add_snapshotter(metadata:str, sample_metadata:bool):
         # Generate a new UUID
         metadata.uuid = str(uuid.uuid4())
         alias = metadata.alias
-        
-        #Check if alias already exists
+
+        # Check if alias already exists
         if await reader_redis_pool.exists(get_snapshotter_info_key(alias)):
             click.echo(f"Error: The alias {alias} already exists.")
             return
@@ -83,7 +91,9 @@ async def add_snapshotter(metadata:str, sample_metadata:bool):
         print(f"Alias: {metadata.alias}")
         print(f"UUID: {metadata.uuid}")
         print(f"Redis key: snapshotterInfo:{alias}")
-        print(f"UUID-alias Mapping: {metadata.uuid} - {metadata.alias}")
+        print(f"UUID-alias Mapping:' {metadata.uuid} - {metadata.alias}")
+        print('Allotted rate limit: ', metadata.rate_limit)
+
 
 if __name__ == '__main__':
     asyncio.run(add_snapshotter())

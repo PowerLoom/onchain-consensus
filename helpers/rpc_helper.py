@@ -1,12 +1,12 @@
-import requests
 import time
-import logging.handlers
-import sys
-from itertools import repeat
 from functools import wraps
-from .message_models import RPCNodesObject
+from itertools import repeat
+
+import requests
+
 from settings.conf import settings
 from utils.default_logger import logger
+from .message_models import RPCNodesObject
 
 rpc_logger = logger.bind(module='PowerLoom|OffChainConsensus|RPCHelper')
 REQUEST_TIMEOUT = settings.chain.rpc.request_timeout
