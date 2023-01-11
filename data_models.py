@@ -165,6 +165,13 @@ class SnapshotterIssue(BaseModel):
     severity: SnapshotterIssueSeverity
     issueType: str
     projectID: str
+    serviceName: str
     epochs: Optional[List[int]]
     timeOfReporting: Optional[int]
     noOfEpochsBehind: Optional[int]
+
+class SnapshotterMetadata(BaseModel):
+    name: str
+    email: str
+    alias: str
+    uuid: Optional[str] = None

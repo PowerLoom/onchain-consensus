@@ -4,7 +4,6 @@ const { readFileSync } = require('fs');
 const settings = JSON.parse(readFileSync('settings/settings.json'));
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const INTERPRETER = process.env.CONSENSUS_INTERPRETER || "python";
 const BEGIN_BLOCK = process.env.TICKER_BEGIN_BLOCK || "";
 
 
@@ -16,7 +15,7 @@ module.exports = {
   apps : [
     {
       name   : "epoch-tracker",
-      script : `${INTERPRETER} -m snapshot_consensus.epoch_generator ${BEGIN_BLOCK } `,
+      script : `poetry run python -m epoch_generator ${BEGIN_BLOCK } `,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,
       env: {
