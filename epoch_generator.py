@@ -205,18 +205,20 @@ class EpochGenerator:
                         begin_block_epoch = end_block_epoch + 1
 
 
-def main(start_block: int = 0, simulation_mode=False):
+def main(start_block, simulation_mode, **kwargs):
     """Spin up the ticker process in event loop"""
     ticker_process = EpochGenerator(simulation_mode=simulation_mode)
-    kwargs = dict()
-    asyncio.run(ticker_process.setup(**kwargs))
-    asyncio.run(ticker_process.init(start_block))
+    asyncio.get_event_loop().run_until_complete(ticker_process.run(begin_block_epoch=start_block, **kwargs))
 
 
 if __name__ == '__main__':
     args = sys.argv
+    kwargs_dict = dict()
     if len(args) > 1:
         begin_block = int(args[1])
-        main(start_block=begin_block)
+        if len(args) > 2:
+            end_block = int(args[2])
+            kwargs_dict['end'] = end_block
+        main(start_block=begin_block, simulation_mode=False, **kwargs_dict)
     else:
-        main()
+        main(start_block=0, simulation_mode=False)
