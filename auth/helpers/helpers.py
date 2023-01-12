@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
+from json.decoder import JSONDecodeError
 
 from auth.helpers.data_models import AuthCheck
 from auth.helpers.data_models import RateLimitAuthCheck
@@ -17,7 +18,6 @@ from data_models import PeerUUIDIncludedRequests, SnapshotterMetadata
 from helpers import redis_keys
 from settings.conf import settings as consensus_settings
 from utils.rate_limiter import generic_rate_limiter
-
 
 async def incr_success_calls_count(
         auth_redis_conn: aioredis.Redis,
@@ -84,7 +84,7 @@ async def auth_check(
     auth_redis_conn: aioredis.Redis = request.app.state.writer_redis_pool
     try:
         uuid_included_request_body = PeerUUIDIncludedRequests.parse_obj(await request.json())
-    except pydantic.ValidationError:
+    except (pydantic.ValidationError, JSONDecodeError):
         uuid_included_request_body = False
 
     if not uuid_included_request_body:
