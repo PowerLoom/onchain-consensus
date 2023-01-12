@@ -4,7 +4,7 @@ from data_models import (
     Message, EpochInfo,
     EpochStatus, EpochDetails, SnapshotterIssue, SnapshotterAliasIssue
 )
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi.responses import JSONResponse
 from settings.conf import settings
 from helpers.state import submission_delayed, register_submission, check_consensus, check_submissions_consensus
@@ -389,8 +389,7 @@ async def bound_check_consensus(
         # FIXED: redis_pool is of type aioredis.Redis, not RedisPool
         redis_pool: aioredis.Redis,
         semaphore: asyncio.BoundedSemaphore
-        # FIXME: check_consensus() returns Tuple[SubmissionAcceptanceStatus, Union[str, None]] as noted in annotation
-) -> SubmissionAcceptanceStatus:
+) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
     """Check consensus in a bounded way. Will run N paralell threads at once max."""
     consensus_status = await check_consensus(project_id, epoch_end, redis_pool)
     return consensus_status
