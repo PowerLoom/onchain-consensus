@@ -30,7 +30,8 @@ metadata_sample = SnapshotterMetadata(
     active=UserStatusEnum.active,
     email='xcz@0bv.com',
     alias='HappySnapper',
-    name='HappySnapper'
+    name='HappySnapper',
+    uuid=uuid.UUID(int=0).__str__()
 ).json(exclude={'callsCount', 'throttledCount', 'next_reset_at', 'uuid'})
 
 
@@ -69,8 +70,9 @@ async def add_snapshotter(metadata: str, sample_metadata: bool):
             click.echo("Sample metadata: ")
             click.echo(metadata_sample)
             return
-        # Generate a new UUID
-        metadata.uuid = str(uuid.uuid4())
+        if not metadata.uuid:
+            # Generate a new UUID
+            metadata.uuid = str(uuid.uuid4())
         alias = metadata.alias
 
         # Check if alias already exists
