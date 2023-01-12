@@ -84,6 +84,7 @@ class ConsensusService(BaseModel):
 class NodeConfig(BaseModel):
     url: str
 
+
 class RPCConfig(BaseModel):
     nodes: List[NodeConfig]
     retry: int
@@ -138,7 +139,7 @@ class Submission(BaseModel):
 
 class Message(BaseModel):
     message: str
-    
+
 
 class EpochInfo(BaseModel):
     chainId: int
@@ -202,7 +203,7 @@ class SnapshotterMetadata(BaseModel):
     active: UserStatusEnum
     callsCount: int = 0
     throttledCount: int = 0
-    next_reset_at: int = int(time.time())+86400
+    next_reset_at: int = int(time.time()) + 86400
     name: str
     email: str
     alias: str

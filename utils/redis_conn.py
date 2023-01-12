@@ -9,7 +9,6 @@ import redis.exceptions as redis_exc
 import logging
 import sys
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.DEBUG)
 formatter = logging.Formatter(u"%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s")
@@ -33,7 +32,6 @@ def inject_retry_exception_conf(redis_conf: dict):
 REDIS_CONN_CONF = settings_conf.redis.dict()
 
 REDIS_WRITER_CONN_CONF = settings_conf.redis.dict()
-
 
 # TODO : remove if separate read connections wont be necessary. Presently this does nothing
 REDIS_READER_CONN_CONF = settings_conf.redis.dict()
@@ -79,6 +77,7 @@ def provide_redis_conn(fn):
                 kwargs[arg_conn] = redis_obj
                 logging.debug('Returning after populating redis connection object')
                 return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -101,6 +100,7 @@ async def get_writer_redis_conn():
         single_connection_client=True
     )
     return out
+
 
 # TODO: find references to usage and replace with pool interface
 

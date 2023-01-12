@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from datetime import timedelta
 
+import pydantic
 from async_limits import parse_many
 from fastapi import Depends
 from fastapi import Request
@@ -83,7 +84,7 @@ async def auth_check(
     auth_redis_conn: aioredis.Redis = request.app.state.writer_redis_pool
     try:
         uuid_included_request_body = PeerUUIDIncludedRequests.parse_obj(await request.json())
-    except:
+    except pydantic.ValidationError:
         uuid_included_request_body = False
 
     if not uuid_included_request_body:
@@ -146,44 +147,44 @@ async def auth_check(
 
 async def rate_limit_auth_check(
         request: Request,
-        auth_check: AuthCheck = Depends(auth_check),
+        auth_check_dep: AuthCheck = Depends(auth_check),
 ) -> RateLimitAuthCheck:
-    if auth_check.authorized:
+    if auth_check_dep.authorized:
         auth_redis_conn: aioredis.Redis = request.app.state.writer_redis_pool
         try:
             passed, retry_after, violated_limit = await generic_rate_limiter(
-                parsed_limits=parse_many(auth_check.owner.rate_limit),
+                parsed_limits=parse_many(auth_check_dep.owner.rate_limit),
                 key_bits=[
-                    auth_check.api_key,
+                    auth_check_dep.api_key,
                     request.url.path
                 ],
                 redis_conn=auth_redis_conn,
                 rate_limit_lua_script_shas=request.app.state.rate_limit_lua_script_shas
             )
         except:
-            auth_check.authorized = False
-            auth_check.reason = 'internal cache error'
+            auth_check_dep.authorized = False
+            auth_check_dep.reason = 'internal cache error'
             return RateLimitAuthCheck(
-                **auth_check.dict(),
+                **auth_check_dep.dict(),
                 rate_limit_passed=False,
                 retry_after=1,
                 violated_limit='',
-                current_limit=auth_check.owner.rate_limit,
+                current_limit=auth_check_dep.owner.rate_limit,
             )
         else:
             ret = RateLimitAuthCheck(
-                **auth_check.dict(),
+                **auth_check_dep.dict(),
                 rate_limit_passed=passed,
                 retry_after=retry_after,
                 violated_limit=violated_limit,
-                current_limit=auth_check.owner.rate_limit,
+                current_limit=auth_check_dep.owner.rate_limit,
             )
             if not passed:
                 await incr_throttled_calls_count(auth_redis_conn, ret)
             return ret
         finally:
-            if auth_check.owner.next_reset_at <= int(time.time()):
-                owner_updated_obj = auth_check.owner.copy(deep=True)
+            if auth_check_dep.owner.next_reset_at <= int(time.time()):
+                owner_updated_obj = auth_check_dep.owner.copy(deep=True)
                 owner_updated_obj.callsCount = 0
                 owner_updated_obj.throttledCount = 0
                 owner_updated_obj.next_reset_at = int(time.time()) + 86400
@@ -193,7 +194,7 @@ async def rate_limit_auth_check(
                 )
     else:
         return RateLimitAuthCheck(
-            **auth_check.dict(),
+            **auth_check_dep.dict(),
             rate_limit_passed=False,
             retry_after=1,
             violated_limit='',

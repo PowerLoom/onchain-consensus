@@ -7,7 +7,7 @@ from data_models import (
 from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi.responses import JSONResponse
 from settings.conf import settings
-from helpers.state import submission_delayed, register_submission, check_consensus, check_submissions_consensus
+from helpers.state import submission_delayed, register_submission, check_consensus
 from helpers.redis_keys import *
 from auth.helpers.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
 from auth.helpers.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
@@ -16,7 +16,6 @@ from fastapi import FastAPI, Request, Response, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from functools import wraps
 from utils.redis_conn import RedisPool
-from pydantic import ValidationError
 from redis import asyncio as aioredis
 import sys
 import json
@@ -169,6 +168,7 @@ async def submit_snapshot(
 @app.post('/checkForSnapshotConfirmation')
 async def check_submission_status(
         request: Request,
+        req_parsed: SnapshotSubmission,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -178,15 +178,8 @@ async def check_submission_status(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    req_json = await request.json()
-    try:
-        req_parsed = SnapshotSubmission.parse_obj(req_json)
-    except ValidationError:
-        service_logger.opt(exception=True).error('Bad request in check submission status: {}', req_json)
-        response.status_code = 400
-        return {}
-    status, finalized_cid = await check_submissions_consensus(
-        submission=req_parsed, redis_conn=request.app.state.writer_redis_pool
+    status, finalized_cid = await check_consensus(
+        project_id=req_parsed.projectID, redis_conn=request.app.state.writer_redis_pool, epoch_end=req_parsed.epoch.end
     )
     if status == SubmissionAcceptanceStatus.notsubmitted:
         response.status_code = 400
@@ -207,6 +200,7 @@ async def check_submission_status(
 @app.post('/reportIssue')
 async def report_issue(
         request: Request,
+        req_parsed: SnapshotterIssue,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -216,12 +210,6 @@ async def report_issue(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    req_json = await request.json()
-    try:
-        req_parsed = SnapshotterIssue.parse_obj(req_json)
-    except ValidationError:
-        service_logger.opt(exception=True).error('Bad request in report issue: {}', req_json)
-        return JSONResponse(status_code=400, content={"message": f"Validation Error, invalid Data."})
 
     # Updating time of reporting to avoid manual incorrect time manipulation
     req_parsed.timeOfReporting = int(time.time())
@@ -241,7 +229,6 @@ async def report_issue(
 @app.get("/epochDetails", response_model=EpochDetails, responses={404: {"model": Message}})
 async def epoch_details(
         request: Request,
-        response: Response,
         epoch: int = Query(default=0, gte=0),
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -276,14 +263,14 @@ async def epoch_details(
     total_projects = len(project_keys)
 
     if finalized_projects_count == total_projects:
-        epoch_status = EpochStatus.finalized
+        epoch_status_result = EpochStatus.finalized
     else:
-        epoch_status = EpochStatus.in_progress
+        epoch_status_result = EpochStatus.in_progress
 
     return EpochDetails(
         epochEndHeight=epoch,
         releaseTime=epoch_release_time,
-        status=epoch_status,
+        status=epoch_status_result,
         totalProjects=total_projects,
         projectsFinalized=finalized_projects_count
     )
@@ -292,6 +279,7 @@ async def epoch_details(
 @app.post('/epochStatus')
 async def epoch_status(
         request: Request,
+        req_parsed: SnapshotBase,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -301,15 +289,8 @@ async def epoch_status(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    req_json = await request.json()
-    try:
-        req_parsed = SnapshotBase.parse_obj(req_json)
-    except ValidationError:
-        service_logger.opt(exception=True).error('Bad request in epoch status: {}', req_json)
-        response.status_code = 400
-        return {}
-    status, finalized_cid = await check_submissions_consensus(
-        submission=req_parsed, redis_conn=request.app.state.writer_redis_pool, epoch_consensus_check=True
+    status, finalized_cid = await check_consensus(
+        req_parsed.projectID, req_parsed.epoch.end, request.app.state.reader_redis_pool
     )
     if status != SubmissionAcceptanceStatus.finalized:
         status = EpochConsensusStatus.no_consensus
@@ -457,7 +438,11 @@ async def get_epochs(
     }
 
 
-@app.get("/metrics/{snapshotter_alias}/issues", response_model=List[SnapshotterAliasIssue], responses={404: {"model": Message}})
+@app.get(
+    "/metrics/{snapshotter_alias}/issues",
+    response_model=List[SnapshotterAliasIssue],
+    responses={404: {"model": Message}}
+)
 async def get_snapshotter_issues(
         snapshotter_alias: str,
         request: Request,
@@ -500,7 +485,6 @@ async def get_submission_status(
         project_id: str,
         epoch: str,
         request: Request,
-        response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
     if not (
@@ -509,10 +493,9 @@ async def get_submission_status(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    """
-    Returns the submission details for the given project and epoch, including whether consensus has been achieved and the final snapshot CID.
-    Also includes the details of snapshot submissions, such as snapshotter ID and submission time.
-    """
+    """Returns the submission details for the given project and epoch, including whether consensus has been achieved 
+    and the final snapshot CID. Also includes the details of snapshot submissions, such as snapshotter ID and 
+    submission time. """
 
     submission_schedule = await request.app.state.reader_redis_pool.get(
         get_epoch_submission_schedule_key(project_id, epoch))

@@ -35,19 +35,19 @@ def chunks(start_idx, stop_idx, n):
 
 def redis_cleanup(fn):
     @wraps(fn)
-    async def wrapper(self, *args, **kwargs):
+    async def wrapper(self, *wrapper_args, **kwargs):
         try:
-            await fn(self, *args, **kwargs)
+            await fn(self, *wrapper_args, **kwargs)
         except (GenericExitOnSignal, KeyboardInterrupt):
             try:
                 self._logger.debug('Waiting for pushing latest epoch to Redis')
 
                 await self._writer_redis_pool.set(get_epoch_generator_last_epoch(), self.last_sent_block)
 
-                self._logger.debug('Shutting down after sending out last epoch with end block height as {},'
-                                    ' starting blockHeight to be used during next restart is {}'
-                                    ,self.last_sent_block
-                                    , self.last_sent_block+1)
+                self._logger.debug(self.last_sent_block
+                                   , 'Shutting down after sending out last epoch with end block height as {},'
+                                   ' starting blockHeight to be used during next restart is {}'
+                                   , self.last_sent_block + 1)
             except Exception as E:
                 self._logger.error('Error while saving last state: {}', E)
         except Exception as E:
@@ -56,6 +56,7 @@ def redis_cleanup(fn):
             self._logger.debug('Shutting down')
             if not self._simulation_mode:
                 sys.exit(0)
+
     return wrapper
 
 
@@ -118,7 +119,7 @@ class EpochGenerator:
                     return
             else:
                 self._logger.debug('Begin block not given, attempting starting from Redis')
-                begin_block_epoch = int(last_block_data_redis.decode("utf-8"))+1
+                begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
                 self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
 
         end_block_epoch = self._end
@@ -143,7 +144,8 @@ class EpochGenerator:
                 cur_block = rpc_obj.rpc_eth_blocknumber(rpc_nodes=rpc_nodes_obj)
             except Exception as ex:
                 self._logger.error(
-                    "Unable to fetch latest block number due to RPC failure {}. Retrying after {} seconds.",ex,settings.chain.epoch.block_time)
+                    ex, "Unable to fetch latest block number due to RPC failure {}. Retrying after {} seconds.",
+                    settings.chain.epoch.block_time)
                 sleep(settings.chain.epoch.block_time)
                 continue
             else:
@@ -160,15 +162,15 @@ class EpochGenerator:
                     if not (end_block_epoch - begin_block_epoch + 1) >= settings.chain.epoch.height:
                         sleep_factor = settings.chain.epoch.height - ((end_block_epoch - begin_block_epoch) + 1)
                         self._logger.debug('Current head of source chain estimated at block {} after offsetting | '
-                                                   '{} - {} does not satisfy configured epoch length. '
-                                                   'Sleeping for {} seconds for {} blocks to accumulate....',
-                                                   end_block_epoch, begin_block_epoch, end_block_epoch,
-                                                   sleep_factor*settings.chain.epoch.block_time, sleep_factor
-                                                   )
+                                           '{} - {} does not satisfy configured epoch length. '
+                                           'Sleeping for {} seconds for {} blocks to accumulate....',
+                                           end_block_epoch, begin_block_epoch, end_block_epoch,
+                                           sleep_factor * settings.chain.epoch.block_time, sleep_factor
+                                           )
                         time.sleep(sleep_factor * settings.chain.epoch.block_time)
                         continue
                     self._logger.debug('Chunking blocks between {} - {} with chunk size: {}', begin_block_epoch,
-                                               end_block_epoch, settings.chain.epoch.height)
+                                       end_block_epoch, settings.chain.epoch.height)
                     for epoch in chunks(begin_block_epoch, end_block_epoch, settings.chain.epoch.height):
                         if epoch[1] - epoch[0] + 1 < settings.chain.epoch.height:
                             self._logger.debug(
@@ -181,22 +183,26 @@ class EpochGenerator:
                         epoch_block = {'begin': epoch[0], 'end': epoch[1]}
                         generated_block_counter += 1
                         self._logger.debug('Epoch of sufficient length found: {}', epoch_block)
-                        
-                        await self._writer_redis_pool.set(name=get_epoch_generator_last_epoch(), value=epoch_block['end'])
+
+                        await self._writer_redis_pool.set(name=get_epoch_generator_last_epoch(),
+                                                          value=epoch_block['end'])
                         await self._writer_redis_pool.zadd(
                             name=get_epoch_generator_epoch_history(),
-                            mapping={json.dumps({"begin":epoch_block['begin'],"end":epoch_block['end']}): int(time.time())}
+                            mapping={json.dumps({"begin": epoch_block['begin'], "end": epoch_block['end']}): int(
+                                time.time())}
                         )
 
                         if self._simulation_mode and generated_block_counter >= 10:
                             break
 
-                        epoch_generator_history_len = await self._writer_redis_pool.zcard(get_epoch_generator_epoch_history())
+                        epoch_generator_history_len = await self._writer_redis_pool.zcard(
+                            get_epoch_generator_epoch_history())
 
                         # Remove oldest epoch history if length exceeds configured limit
                         history_len = settings.chain.epoch.history_length
                         if epoch_generator_history_len > history_len:
-                            await self._writer_redis_pool.zremrangebyrank(get_epoch_generator_epoch_history(), 0, -history_len)
+                            await self._writer_redis_pool.zremrangebyrank(get_epoch_generator_epoch_history(), 0,
+                                                                          -history_len)
 
                         self.last_sent_block = epoch_block['end']
                         self._logger.debug('Waiting to push next epoch in {} seconds...', sleep_secs_between_chunks)
