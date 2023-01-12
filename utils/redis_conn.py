@@ -133,10 +133,8 @@ class RedisPool:
         self._replication_mode = replication_mode
 
     async def populate(self):
-        if not self.writer_redis_pool:
-            self.writer_redis_pool: aioredis.Redis = await get_redis_pool(self._writer_redis_conf, self._pool_size)
-            if self._replication_mode:
-                self.reader_redis_pool = self.writer_redis_pool
-            else:
-                if not self.reader_redis_pool:
-                    self.reader_redis_pool: aioredis.Redis = await get_redis_pool(self._reader_redis_conf, self._pool_size)
+        self.writer_redis_pool: aioredis.Redis = await get_redis_pool(self._writer_redis_conf, self._pool_size)
+        if self._replication_mode:
+            self.reader_redis_pool = self.writer_redis_pool
+        else:
+            self.reader_redis_pool: aioredis.Redis = await get_redis_pool(self._reader_redis_conf, self._pool_size)

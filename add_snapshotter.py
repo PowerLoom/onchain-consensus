@@ -30,9 +30,8 @@ metadata_sample = SnapshotterMetadata(
     active=UserStatusEnum.active,
     email='xcz@0bv.com',
     alias='HappySnapper',
-    name='HappySnapper',
-    uuid=uuid.UUID(int=0).__str__()
-).json(exclude={'callsCount', 'throttledCount', 'next_reset_at'})
+    name='HappySnapper'
+).json(exclude={'callsCount', 'throttledCount', 'next_reset_at', 'uuid'})
 
 
 @click.command()

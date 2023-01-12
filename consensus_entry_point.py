@@ -112,6 +112,7 @@ async def startup_boilerplate():
 
 @app.post('/registerProjectPeer')
 async def register_peer_against_project(
+        req_parsed: PeerRegistrationRequest,
         request: Request,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
@@ -122,13 +123,6 @@ async def register_peer_against_project(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    req_json = await request.json()
-    try:
-        req_parsed: PeerRegistrationRequest = PeerRegistrationRequest.parse_obj(req_json)
-    except ValidationError:
-        service_logger.opt(exception=True).error('Bad request in register peer: {}', req_json)
-        response.status_code = 400
-        return {}
     await request.app.state.writer_redis_pool.sadd(
         get_project_registered_peers_set_key(req_parsed.projectID),
         req_parsed.instanceID
@@ -138,6 +132,7 @@ async def register_peer_against_project(
 @app.post('/submitSnapshot')
 async def submit_snapshot(
         request: Request,
+        req_parsed: SnapshotSubmission,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -148,14 +143,7 @@ async def submit_snapshot(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     cur_ts = int(time.time())
-    req_json = await request.json()
-    try:
-        req_parsed = SnapshotSubmission.parse_obj(req_json)
-    except ValidationError:
-        service_logger.opt(exception=True).error('Bad request in submit snapshot: {}', req_json)
-        response.status_code = 400
-        return {}
-    service_logger.debug('Snapshot for submission: {}', req_json)
+    service_logger.debug('Snapshot for submission: {}', req_parsed)
     # get last accepted epoch?
     if await submission_delayed(
             project_id=req_parsed.projectID,
@@ -549,7 +537,7 @@ async def get_submission_status(
             submission_status = SubmissionStatus.within_schedule
         else:
             submission_status = SubmissionStatus.delayed
-        snapshotter_name = await request.state.app.reader_redis_pool.hget(
+        snapshotter_name = await request.app.state.reader_redis_pool.hget(
             get_snapshotter_info_snapshotter_mapping_key(),
             snapshotter_uuid
         )
