@@ -1,12 +1,12 @@
-import requests
 import time
-import logging.handlers
-import sys
-from itertools import repeat
 from functools import wraps
-from .message_models import RPCNodesObject
+from itertools import repeat
+
+import requests
+
 from settings.conf import settings
 from utils.default_logger import logger
+from .message_models import RPCNodesObject
 
 rpc_logger = logger.bind(module='PowerLoom|OffChainConsensus|RPCHelper')
 REQUEST_TIMEOUT = settings.chain.rpc.request_timeout
@@ -20,7 +20,7 @@ def auto_retry(tries=3, exc=Exception, delay=5):
             for _ in range(tries):
                 try:
                     return func(*args, **kwargs)
-                except exc:
+                except Exception as exc:
                     time.sleep(delay)
                     continue
             raise exc
@@ -40,7 +40,7 @@ class ConstructRPC:
         self._querystring = {"id": network_id, "jsonrpc": "2.0"}
 
     def sync_post_json_rpc(self, procedure, rpc_nodes: RPCNodesObject, params=None):
-        q_s = self.construct_one_timeRPC(procedure=procedure, params=params)
+        q_s = self.construct_one_time_rpc(procedure=procedure, params=params)
         rpc_urls = rpc_nodes.NODES
         retry = dict(zip(rpc_urls, repeat(0)))
         success = False
@@ -88,13 +88,13 @@ class ConstructRPC:
         else:
             return blockdetails
 
-    def construct_one_timeRPC(self, procedure, params, defaultBlock=None):
+    def construct_one_time_rpc(self, procedure, params, default_block=None):
         self._querystring["method"] = procedure
         self._querystring["params"] = []
         if type(params) is list:
             self._querystring["params"].extend(params)
         elif params is not None:
             self._querystring["params"].append(params)
-        if defaultBlock is not None:
-            self._querystring["params"].append(defaultBlock)
+        if default_block is not None:
+            self._querystring["params"].append(default_block)
         return self._querystring

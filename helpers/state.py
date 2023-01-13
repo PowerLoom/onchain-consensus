@@ -1,5 +1,5 @@
 from data_models import (
-    SubmissionDataStoreEntry, SnapshotSubmission, SubmissionSchedule, SubmissionAcceptanceStatus, SnapshotBase
+    SubmissionDataStoreEntry, SnapshotSubmission, SubmissionSchedule, SubmissionAcceptanceStatus
 )
 from settings.conf import settings
 from helpers.redis_keys import *
@@ -109,30 +109,11 @@ async def check_consensus(
                 return SubmissionAcceptanceStatus.accepted, None
 
 
-async def check_submissions_consensus(
-        submission: Union[SnapshotSubmission, SnapshotBase],
-        redis_conn: aioredis.Redis,
-        epoch_consensus_check=False
-) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
-    # map snapshot CID to instance ID list
-    if not epoch_consensus_check:
-        # get all submissions
-        all_submissions = await redis_conn.hgetall(
-            name=get_epoch_submissions_htable_key(
-                project_id=submission.projectID,
-                epoch_end=submission.epoch.end,
-            )
-        )
-        if submission.instanceID not in map(lambda x: x.decode('utf-8'), all_submissions.keys()):
-            return SubmissionAcceptanceStatus.notsubmitted, None
-    return await check_consensus(submission.projectID, submission.epoch.end, redis_conn)
-
-
 async def register_submission(
         submission: SnapshotSubmission,
         cur_ts: int,
         redis_conn: aioredis.Redis
-):
+) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
     await redis_conn.hset(
         name=get_epoch_submissions_htable_key(
             project_id=submission.projectID,
@@ -152,4 +133,4 @@ async def register_submission(
             ),
             time=settings.consensus_service.keys_ttl
         )
-    return await check_submissions_consensus(submission, redis_conn)
+    return await check_consensus(submission.projectID, submission.epoch.end, redis_conn)

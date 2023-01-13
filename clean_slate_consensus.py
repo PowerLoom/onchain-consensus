@@ -11,6 +11,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+
 async def cleanup_redis_state():
     """Delete all redis keys except the ones ending with ':peers'"""
     # Create an instance of the RedisPool class and connect to the Redis instance
@@ -29,6 +30,7 @@ async def cleanup_redis_state():
         if not key.endswith(except_pattern):
             await writer_redis_pool.delete(key)
             logger.info("Deleted key: %s", key)
+
 
 if __name__ == '__main__':
     # Run the cleanup function in an asyncio event loop

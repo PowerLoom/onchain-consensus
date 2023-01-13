@@ -12,6 +12,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+
 async def cleanup_redis_state():
     # Create an instance of the RedisPool class and connect to the Redis instance
     redis_pool = RedisPool(writer_redis_conf=settings.redis)
@@ -25,6 +26,7 @@ async def cleanup_redis_state():
     logger.info("Deleted key: %s", get_epoch_generator_last_epoch())
     await writer_redis_pool.delete(get_epoch_generator_epoch_history())
     logger.info("Deleted key: %s", get_epoch_generator_epoch_history())
+
 
 if __name__ == '__main__':
     # Run the cleanup function in an asyncio event loop

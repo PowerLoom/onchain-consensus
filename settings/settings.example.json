@@ -5,6 +5,7 @@
 		"port": 9030,
 		"keys_ttl": 86400
 	},
+	"rate_limit": "10000/day;20/minute;2/second",
 	"redis": {
 		"host": "127.0.0.1",
 		"port": 6379,

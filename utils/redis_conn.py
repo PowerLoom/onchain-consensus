@@ -9,7 +9,6 @@ import redis.exceptions as redis_exc
 import logging
 import sys
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.DEBUG)
 formatter = logging.Formatter(u"%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s")
@@ -33,7 +32,6 @@ def inject_retry_exception_conf(redis_conf: dict):
 REDIS_CONN_CONF = settings_conf.redis.dict()
 
 REDIS_WRITER_CONN_CONF = settings_conf.redis.dict()
-
 
 # TODO : remove if separate read connections wont be necessary. Presently this does nothing
 REDIS_READER_CONN_CONF = settings_conf.redis.dict()
@@ -79,6 +77,7 @@ def provide_redis_conn(fn):
                 kwargs[arg_conn] = redis_obj
                 logging.debug('Returning after populating redis connection object')
                 return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -102,6 +101,7 @@ async def get_writer_redis_conn():
     )
     return out
 
+
 # TODO: find references to usage and replace with pool interface
 
 async def get_reader_redis_conn():
@@ -117,6 +117,9 @@ async def get_reader_redis_conn():
 
 
 class RedisPool:
+    reader_redis_pool: aioredis.Redis
+    writer_redis_pool: aioredis.Redis
+
     def __init__(
             self,
             writer_redis_conf: RedisConfig = settings_conf.redis,
@@ -124,18 +127,14 @@ class RedisPool:
             pool_size=200,
             replication_mode=True
     ):
-        self.reader_redis_pool = None
-        self.writer_redis_pool = None
         self._writer_redis_conf = writer_redis_conf
         self._reader_redis_conf = reader_redis_conf
         self._pool_size = pool_size
         self._replication_mode = replication_mode
 
     async def populate(self):
-        if not self.writer_redis_pool:
-            self.writer_redis_pool: aioredis.Redis = await get_redis_pool(self._writer_redis_conf, self._pool_size)
-            if self._replication_mode:
-                self.reader_redis_pool = self.writer_redis_pool
-            else:
-                if not self.reader_redis_pool:
-                    self.reader_redis_pool: aioredis.Redis = await get_redis_pool(self._reader_redis_conf, self._pool_size)
+        self.writer_redis_pool: aioredis.Redis = await get_redis_pool(self._writer_redis_conf, self._pool_size)
+        if self._replication_mode:
+            self.reader_redis_pool = self.writer_redis_pool
+        else:
+            self.reader_redis_pool: aioredis.Redis = await get_redis_pool(self._reader_redis_conf, self._pool_size)

@@ -1,3 +1,4 @@
+import time
 from pydantic import BaseModel
 from typing import Union, List, Optional
 from enum import Enum
@@ -10,9 +11,12 @@ class RedisConfig(BaseModel):
     password: Optional[str]
 
 
-class PeerRegistrationRequest(BaseModel):
-    projectID: str
+class PeerUUIDIncludedRequests(BaseModel):
     instanceID: str
+
+
+class PeerRegistrationRequest(PeerUUIDIncludedRequests):
+    projectID: str
 
 
 class EpochBase(BaseModel):
@@ -20,10 +24,9 @@ class EpochBase(BaseModel):
     end: int
 
 
-class SnapshotBase(BaseModel):
+class SnapshotBase(PeerUUIDIncludedRequests):
     epoch: EpochBase
     projectID: str
-    instanceID: str
 
 
 class SnapshotSubmission(SnapshotBase):
@@ -59,9 +62,11 @@ class EpochConsensusStatus(str, Enum):
     consensus_achieved = 'CONSENSUS_ACHIEVED'
     no_consensus = 'NO_CONSENSUS'
 
+
 class EpochStatus(str, Enum):
     in_progress = 'IN_PROGRESS'
     finalized = 'FINALIZED'
+
 
 class SubmissionResponse(BaseModel):
     status: Union[SubmissionAcceptanceStatus, EpochConsensusStatus]
@@ -73,11 +78,12 @@ class ConsensusService(BaseModel):
     submission_window: int
     host: str
     port: str
-    keys_ttl:int=86400
+    keys_ttl: int = 86400
 
 
 class NodeConfig(BaseModel):
     url: str
+
 
 class RPCConfig(BaseModel):
     nodes: List[NodeConfig]
@@ -103,10 +109,11 @@ class SettingsConf(BaseModel):
     redis: RedisConfig
     test_redis: Optional[RedisConfig]
     chain: ChainConfig
+    rate_limit: str
 
 
 # Data model for a list of snapshotters
-class Snapshotters(BaseModel):
+class ProjectSpecificSnapshotters(BaseModel):
     projectId: str
     snapshotters: List[str]
 
@@ -124,7 +131,7 @@ class EpochData(BaseModel):
 
 # Data model for a submission
 class Submission(BaseModel):
-    snapshotterInstanceID: str
+    snapshotterName: str
     snapshotCID: str
     submittedTS: int
     submissionStatus: SubmissionStatus
@@ -132,17 +139,20 @@ class Submission(BaseModel):
 
 class Message(BaseModel):
     message: str
-    
+
+
 class EpochInfo(BaseModel):
     chainId: int
     epochStartBlockHeight: int
     epochEndBlockHeight: int
+
 
 class EpochDataPage(BaseModel):
     total: int
     next_page: Optional[str]
     prev_page: Optional[str]
     data: EpochData
+
 
 class EpochDetails(BaseModel):
     epochEndHeight: int
@@ -165,6 +175,36 @@ class SnapshotterIssue(BaseModel):
     severity: SnapshotterIssueSeverity
     issueType: str
     projectID: str
+    serviceName: str
     epochs: Optional[List[int]]
     timeOfReporting: Optional[int]
     noOfEpochsBehind: Optional[int]
+
+
+class SnapshotterAliasIssue(BaseModel):
+    alias: str
+    namespace: Optional[str]
+    severity: SnapshotterIssueSeverity
+    issueType: str
+    projectID: str
+    serviceName: str
+    epochs: Optional[List[int]]
+    timeOfReporting: Optional[int]
+    noOfEpochsBehind: Optional[int]
+
+
+class UserStatusEnum(str, Enum):
+    active = 'active'
+    inactive = 'inactive'
+
+
+class SnapshotterMetadata(BaseModel):
+    rate_limit: str
+    active: UserStatusEnum
+    callsCount: int = 0
+    throttledCount: int = 0
+    next_reset_at: int = int(time.time()) + 86400
+    name: str
+    email: str
+    alias: str
+    uuid: Optional[str] = None
