@@ -40,12 +40,12 @@ def redis_cleanup(fn):
         except (GenericExitOnSignal, KeyboardInterrupt):
             try:
                 self._logger.debug('Waiting for pushing latest epoch to Redis')
+                if self.last_sent_block:
+                    await self._writer_redis_pool.set(get_epoch_generator_last_epoch(), self.last_sent_block)
 
-                await self._writer_redis_pool.set(get_epoch_generator_last_epoch(), self.last_sent_block)
-
-                self._logger.debug('Shutting down after sending out last epoch with end block height as {},'
-                                   ' starting blockHeight to be used during next restart is {}'
-                                   , self.last_sent_block, self.last_sent_block + 1)
+                    self._logger.debug('Shutting down after sending out last epoch with end block height as {},'
+                                    ' starting blockHeight to be used during next restart is {}'
+                                    , self.last_sent_block, self.last_sent_block + 1)
             except Exception as E:
                 self._logger.error('Error while saving last state: {}', E)
         except Exception as E:
