@@ -69,11 +69,8 @@ def inject_rate_limit_fail_response(rate_limit_auth_check_dependency: RateLimitA
         }
         if 'cache error' in rate_limit_auth_check_dependency.reason:
             response_status = 500
-        elif 'no API key' in rate_limit_auth_check_dependency.reason or \
-                'bad API key' in rate_limit_auth_check_dependency.reason:
+        else:  # return 401 for unauthorized access for every other reason
             response_status = 401
-        else:  # usual auth issues like bad API key
-            response_status = 200
     return JSONResponse(content=response_body, status_code=response_status, headers=response_headers)
 
 
