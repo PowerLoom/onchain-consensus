@@ -113,9 +113,10 @@ class EpochGenerator:
                 )
             else:
                 self._logger.debug('Begin block not given, attempting starting from Redis')
-                self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
 
             begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
+            self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
+
 
         end_block_epoch = self._end
         # Sleep only 1 second to speed up simulation
