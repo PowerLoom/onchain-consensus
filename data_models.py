@@ -110,6 +110,7 @@ class SettingsConf(BaseModel):
     test_redis: Optional[RedisConfig]
     chain: ChainConfig
     rate_limit: str
+    ticker_begin_block: Optional[int]
 
 
 # Data model for a list of snapshotters

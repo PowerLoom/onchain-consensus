@@ -38,5 +38,6 @@
 			"block_time": 15,
 			"history_length": 1000
 		}
-	}
+	},
+	"ticker_begin_block": 16419011
 }

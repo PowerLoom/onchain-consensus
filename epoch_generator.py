@@ -94,8 +94,10 @@ class EpochGenerator:
             raise GenericExitOnSignal
 
     @redis_cleanup
-    async def run(self, begin_block_epoch: int = 0, **kwargs):
+    async def run(self, **kwargs):
         await self.setup(**kwargs)
+        
+        begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
         last_block_data_redis = await self._writer_redis_pool.get(name=get_epoch_generator_last_epoch())
@@ -103,22 +105,18 @@ class EpochGenerator:
             # Can't provide begin block which previous state is present in redis
             if begin_block_epoch != 0:
                 self._logger.debug(
-                    'Attempting to start from {} but last block {} found in Redis.',
-                    begin_block_epoch, last_block_data_redis.decode("utf-8")
+                    'Last epoch block found in Redis: {} and begin block is given as {}',
+                    last_block_data_redis.decode("utf-8"), begin_block_epoch
                 )
                 self._logger.debug(
-                    'Either use clean_slate_ticker.py to reset the Redis state or '
-                    'remove the begin_block_epoch argument.'
+                    'Using redis last epoch block as begin block and ignoring begin block given as {}', begin_block_epoch
                 )
-                # TODO: WAT?
-                if not self._simulation_mode:
-                    sys.exit(0)
-                else:
-                    return
             else:
                 self._logger.debug('Begin block not given, attempting starting from Redis')
-                begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
-                self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
+
+            begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
+            self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
+
 
         end_block_epoch = self._end
         # Sleep only 1 second to speed up simulation
@@ -211,21 +209,19 @@ class EpochGenerator:
                         begin_block_epoch = end_block_epoch + 1
 
 
-def main(start_block, simulation_mode, **kwargs):
+def main(simulation_mode, **kwargs):
     """Spin up the ticker process in event loop"""
     ticker_process = EpochGenerator(simulation_mode=simulation_mode)
     print('Set sim mode: ', simulation_mode)
-    asyncio.get_event_loop().run_until_complete(ticker_process.run(begin_block_epoch=start_block, **kwargs))
+    asyncio.get_event_loop().run_until_complete(ticker_process.run(**kwargs))
 
 
 if __name__ == '__main__':
     args = sys.argv
     kwargs_dict = dict()
     if len(args) > 1:
-        begin_block = int(args[1])
-        if len(args) > 2:
-            end_block = int(args[2])
-            kwargs_dict['end'] = end_block
-        main(start_block=begin_block, simulation_mode=False, **kwargs_dict)
+        end_block = int(args[1])
+        kwargs_dict['end'] = end_block
+        main(simulation_mode=False, **kwargs_dict)
     else:
-        main(start_block=0, simulation_mode=False)
+        main(simulation_mode=False)

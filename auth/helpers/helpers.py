@@ -184,10 +184,7 @@ async def rate_limit_auth_check(
                 owner_updated_obj.callsCount = 0
                 owner_updated_obj.throttledCount = 0
                 owner_updated_obj.next_reset_at = int(time.time()) + 86400
-                await auth_redis_conn.hset(
-                    name=user_details_htable(owner_updated_obj.email),
-                    mapping=owner_updated_obj.dict(),
-                )
+                await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=auth_check_dep.owner.alias), owner_updated_obj.json())
     else:
         return RateLimitAuthCheck(
             **auth_check_dep.dict(),
