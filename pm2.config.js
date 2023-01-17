@@ -12,7 +12,7 @@ const MIN_UPTIME = 60000;
 module.exports = {
   apps : [
     {
-      name   : "epoch-tracker",
+      name   : "epoch-generator",
       script : `poetry run python -m epoch_generator`,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,
