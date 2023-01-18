@@ -9,8 +9,8 @@ from fastapi.responses import JSONResponse
 from settings.conf import settings
 from helpers.state import submission_delayed, register_submission, check_consensus
 from helpers.redis_keys import *
-from auth.helpers.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
-from auth.helpers.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
+from auth.utils.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
+from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
 from utils.rate_limiter import load_rate_limiter_scripts
 from fastapi import FastAPI, Request, Response, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware

@@ -44,8 +44,8 @@ def redis_cleanup(fn):
                     await self._writer_redis_pool.set(get_epoch_generator_last_epoch(), self.last_sent_block)
 
                     self._logger.debug('Shutting down after sending out last epoch with end block height as {},'
-                                    ' starting blockHeight to be used during next restart is {}'
-                                    , self.last_sent_block, self.last_sent_block + 1)
+                                       ' starting blockHeight to be used during next restart is {}'
+                                       , self.last_sent_block, self.last_sent_block + 1)
             except Exception as E:
                 self._logger.error('Error while saving last state: {}', E)
         except Exception as E:
@@ -96,7 +96,7 @@ class EpochGenerator:
     @redis_cleanup
     async def run(self, **kwargs):
         await self.setup(**kwargs)
-        
+
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
@@ -109,14 +109,14 @@ class EpochGenerator:
                     last_block_data_redis.decode("utf-8"), begin_block_epoch
                 )
                 self._logger.debug(
-                    'Using redis last epoch block as begin block and ignoring begin block given as {}', begin_block_epoch
+                    'Using redis last epoch block as begin block and ignoring begin block given as {}',
+                    begin_block_epoch
                 )
             else:
                 self._logger.debug('Begin block not given, attempting starting from Redis')
 
             begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
             self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
-
 
         end_block_epoch = self._end
         # Sleep only 1 second to speed up simulation
