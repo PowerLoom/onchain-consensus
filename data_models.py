@@ -178,6 +178,7 @@ class SnapshotterIssue(BaseModel):
     projectID: str
     serviceName: str
     epochs: Optional[List[int]]
+    extra: Optional[dict]
     timeOfReporting: Optional[int]
     noOfEpochsBehind: Optional[int]
 
@@ -190,6 +191,7 @@ class SnapshotterAliasIssue(BaseModel):
     projectID: str
     serviceName: str
     epochs: Optional[List[int]]
+    extra: Optional[dict]
     timeOfReporting: Optional[int]
     noOfEpochsBehind: Optional[int]
 
