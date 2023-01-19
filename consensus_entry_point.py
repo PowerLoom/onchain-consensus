@@ -7,7 +7,7 @@ from data_models import (
 from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi.responses import JSONResponse
 from settings.conf import settings
-from helpers.state import submission_delayed, register_submission, check_consensus
+from helpers.state import submission_delayed, register_submission, check_consensus, prune_finalized_cids_htable
 from helpers.redis_keys import *
 from auth.utils.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
 from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
@@ -100,6 +100,19 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
             return response
 
 
+async def periodic_finalized_cids_htable_cleanup():
+    project_id_pattern = "projectID:*:centralizedConsensus:peers"
+    while True:
+        pruning_tasks = list()
+        async for project_id in app.state.reader_redis_pool.scan_iter(match=project_id_pattern):
+            project_id = project_id.decode("utf-8").split(":")[1]
+            pruning_tasks.append(prune_finalized_cids_htable(project_id, app.state.reader_redis_pool))
+        pruning_tasks.append(asyncio.sleep(3600))
+        await asyncio.gather(
+            *pruning_tasks, return_exceptions=True
+        )
+
+
 @app.on_event('startup')
 async def startup_boilerplate():
     app.state.aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
@@ -107,6 +120,7 @@ async def startup_boilerplate():
     app.state.reader_redis_pool = app.state.aioredis_pool.reader_redis_pool
     app.state.writer_redis_pool = app.state.aioredis_pool.writer_redis_pool
     app.state.rate_limit_lua_script_shas = await load_rate_limiter_scripts(app.state.writer_redis_pool)
+    asyncio.ensure_future(periodic_finalized_cids_htable_cleanup())
 
 
 @app.post('/registerProjectPeer')
