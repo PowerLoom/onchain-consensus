@@ -98,6 +98,7 @@ async def check_consensus(
     _ = await redis_conn.hget(get_project_finalized_epoch_cids_htable(project_id), epoch_end)
     if _:
         return SubmissionAcceptanceStatus.finalized, _.decode('utf-8')
+    epoch_schedule = await get_submission_schedule(project_id, epoch_end, redis_conn)
     all_submissions = await redis_conn.hgetall(
         name=get_epoch_submissions_htable_key(
             project_id=project_id,
@@ -108,15 +109,18 @@ async def check_consensus(
     for instance_id_b, submission_b in all_submissions.items():
         sub_entry: SubmissionDataStoreEntry = SubmissionDataStoreEntry.parse_raw(submission_b)
         instance_id = instance_id_b.decode('utf-8')
-        if sub_entry.snapshotCID not in cid_submission_map:
-            cid_submission_map[sub_entry.snapshotCID] = [instance_id]
-        else:
-            cid_submission_map[sub_entry.snapshotCID].append(instance_id)
-    epoch_schedule = await get_submission_schedule(project_id, epoch_end, redis_conn)
-    num_submitted_peers = len(all_submissions)
+        # NOTE: only counting submissions within schedule for consensus
+        if sub_entry.submittedTS <= epoch_schedule.end:
+            if sub_entry.snapshotCID not in cid_submission_map:
+                cid_submission_map[sub_entry.snapshotCID] = [instance_id]
+            else:
+                cid_submission_map[sub_entry.snapshotCID].append(instance_id)
 
     sub_count_map = {k: len(cid_submission_map[k]) for k in cid_submission_map.keys()}
+    num_submitted_peers = sum(sub_count_map.values())
     if int(time.time()) >= epoch_schedule.end:
+        if num_submitted_peers < settings.consensus_criteria.min_snapshotter_count:
+            return SubmissionAcceptanceStatus.indeterminate, None
         divisor = num_submitted_peers
     else:
         # when deadline is not over, consider conservative calculation against all expected peers
@@ -124,7 +128,7 @@ async def check_consensus(
     for cid, sub_count in sub_count_map.items():
         # find one CID on which consensus has been reached
         if sub_count/divisor * 100 >= settings.consensus_criteria.percentage or \
-                (sub_count == settings.consensus_criteria.min_snapshotter_count and int(time.time()) >= epoch_schedule.end):
+                (sub_count >= settings.consensus_criteria.min_snapshotter_count and int(time.time()) >= epoch_schedule.end):
             await redis_conn.hset(
                 name=get_project_finalized_epoch_cids_htable(project_id),
                 mapping={epoch_end: cid}
