@@ -1,9 +1,11 @@
+import asyncio
+
 from data_models import (
     SubmissionDataStoreEntry, SnapshotSubmission, SubmissionSchedule, SubmissionAcceptanceStatus
 )
 from settings.conf import settings
 from helpers.redis_keys import *
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional
 from redis import asyncio as aioredis
 import time
 
@@ -39,6 +41,11 @@ async def set_submission_schedule(
         value=SubmissionSchedule(begin=cur_ts, end=cur_ts+settings.consensus_service.submission_window).json(),
         ex=settings.consensus_service.keys_ttl
     )
+    # loop.call_later(delay, callback, *args, context=None)¶
+    asyncio.get_running_loop().call_later(
+        settings.consensus_service.submission_window,
+        check_consensus, project_id, epoch_end, redis_conn
+    )
 
 
 async def set_submission_accepted_peers(
@@ -72,6 +79,9 @@ async def check_consensus(
         epoch_end: int,
         redis_conn: aioredis.Redis
 ) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
+    _ = await redis_conn.hget(get_project_finalized_epoch_cids_htable(project_id), epoch_end)
+    if _:
+        return SubmissionAcceptanceStatus.finalized, _.decode('utf-8')
     all_submissions = await redis_conn.hgetall(
         name=get_epoch_submissions_htable_key(
             project_id=project_id,
@@ -86,27 +96,27 @@ async def check_consensus(
             cid_submission_map[sub_entry.snapshotCID] = [instance_id]
         else:
             cid_submission_map[sub_entry.snapshotCID].append(instance_id)
+    epoch_schedule = await get_submission_schedule(project_id, epoch_end, redis_conn)
+    num_submitted_peers = len(all_submissions)
 
-    num_expected_peers = await redis_conn.scard(get_project_epoch_specific_accepted_peers_key(project_id, epoch_end))
-    # best case scenario
-    if len(cid_submission_map.keys()) == 1:
-        if len(list(cid_submission_map.values())[0]) / num_expected_peers >= 2/3:
-            return SubmissionAcceptanceStatus.finalized, list(cid_submission_map.keys())[0]
-        else:
-            return SubmissionAcceptanceStatus.accepted, None
+    sub_count_map = {k: len(cid_submission_map[k]) for k in cid_submission_map.keys()}
+    if int(time.time()) >= epoch_schedule.end:
+        divisor = num_submitted_peers
     else:
-        sub_count_map = {k: len(cid_submission_map[k]) for k in cid_submission_map.keys()}
-        num_submissions = sum(sub_count_map.values())
-        for cid, sub_count in sub_count_map.items():
-            # found one CID on which consensus has been reached
-            if sub_count/num_submissions >= 2/3:
-                return SubmissionAcceptanceStatus.finalized, cid
-        else:
-            # find if all peers have submitted and yet no consensus reached
-            if num_submissions == num_expected_peers:
-                return SubmissionAcceptanceStatus.indeterminate, None
-            else:
-                return SubmissionAcceptanceStatus.accepted, None
+        # when deadline is not over, consider conservative calculation against all expected peers
+        divisor = await redis_conn.scard(get_project_epoch_specific_accepted_peers_key(project_id, epoch_end))
+    for cid, sub_count in sub_count_map.items():
+        # find one CID on which consensus has been reached
+        if sub_count/divisor * 100 >= settings.consensus_criteria.percentage or \
+                sub_count == settings.consensus_criteria.min_snapshotter_count:
+            await redis_conn.hset(
+                name=get_project_finalized_epoch_cids_htable(project_id),
+                mapping={epoch_end: cid}
+            )
+            return SubmissionAcceptanceStatus.finalized, cid
+    else:
+        # find if deadline passed and yet no consensus reached
+        return SubmissionAcceptanceStatus.indeterminate if int(time.time()) >= epoch_schedule.end else SubmissionAcceptanceStatus.accepted, None
 
 
 async def register_submission(

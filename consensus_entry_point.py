@@ -154,10 +154,6 @@ async def submit_snapshot(
     else:
         response_obj = SubmissionResponse(status=SubmissionAcceptanceStatus.accepted, delayedSubmission=False)
     consensus_status, finalized_cid = await register_submission(req_parsed, cur_ts, request.app.state.writer_redis_pool)
-    # if consensus achieved, set the key
-    if finalized_cid:
-        await request.app.state.writer_redis_pool.sadd(get_project_finalized_epochs_key(req_parsed.projectID),
-                                                       req_parsed.epoch.end)
 
     response_obj.status = consensus_status
     response_obj.finalizedSnapshotCID = finalized_cid
@@ -257,7 +253,7 @@ async def epoch_details(
     async for project_id in request.app.state.reader_redis_pool.scan_iter(match=projectID_pattern):
         project_id = project_id.decode("utf-8").split(":")[1]
         project_keys.append(project_id)
-        if await request.app.state.reader_redis_pool.sismember(get_project_finalized_epochs_key(project_id), epoch):
+        if await request.app.state.reader_redis_pool.hexists(get_project_finalized_epoch_cids_htable(project_id), epoch):
             finalized_projects_count += 1
 
     total_projects = len(project_keys)
@@ -364,7 +360,7 @@ async def get_snapshotters(
 
 
 @acquire_bounded_semaphore
-async def bound_check_consensus(
+async def bound_check_epoch_finalization(
         project_id: str,
         epoch_end: int,
         # FIXED: redis_pool is of type aioredis.Redis, not RedisPool
@@ -416,7 +412,7 @@ async def get_epochs(
     semaphore = asyncio.BoundedSemaphore(25)
     epochs = []
     epoch_status_tasks = [
-        bound_check_consensus(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore)
+        bound_check_epoch_finalization(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore)
         for epoch_end in epoch_ends_data
     ]
     epoch_status_task_results = await asyncio.gather(*epoch_status_tasks)
