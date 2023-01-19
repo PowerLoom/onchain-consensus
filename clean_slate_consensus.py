@@ -25,12 +25,13 @@ async def cleanup_redis_state():
     pattern = "*:centralizedConsensus:*"
     except_pattern = b":peers"
     cursor = "0"
-    cursor, keys = await writer_redis_pool.scan(cursor=cursor, match=pattern, count=1000)
-    for key in keys:
-        if not key.endswith(except_pattern):
-            await writer_redis_pool.delete(key)
-            logger.info("Deleted key: %s", key)
-
+    while cursor != 0:
+        cursor, keys = await writer_redis_pool.scan(cursor=cursor, match=pattern, count=1000)
+        for key in keys:
+            if not key.endswith(except_pattern):
+                await writer_redis_pool.delete(key)
+                logger.info("Deleted key: %s", key)
+    logger.info("Cleaning process complete.")
 
 if __name__ == '__main__':
     # Run the cleanup function in an asyncio event loop
