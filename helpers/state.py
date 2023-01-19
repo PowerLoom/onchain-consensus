@@ -27,6 +27,22 @@ async def get_submission_schedule(
         return SubmissionSchedule.parse_raw(schedule)
 
 
+async def prune_finalized_cids_htable(
+        project_id: str,
+        redis_conn: aioredis.Redis
+):
+    all_finalized = await redis_conn.hgetall(
+        name=get_project_finalized_epoch_cids_htable(project_id)
+    )
+    to_be_del = list()
+    for epoch_b, cid_b in all_finalized.items():
+        epoch = int(epoch_b)
+        schedule = await get_submission_schedule(project_id, epoch, redis_conn)
+        if time.time() - schedule.end >= 3600:
+            to_be_del.append(epoch)
+    await redis_conn.hdel(get_project_finalized_epoch_cids_htable(project_id), *to_be_del)
+
+
 async def set_submission_schedule(
         project_id,
         epoch_end,
@@ -45,6 +61,11 @@ async def set_submission_schedule(
     asyncio.get_running_loop().call_later(
         settings.consensus_service.submission_window,
         check_consensus, project_id, epoch_end, redis_conn
+    )
+    # per hour
+    asyncio.get_running_loop().call_later(
+        3600,
+        prune_finalized_cids_htable, project_id, redis_conn
     )
 
 
