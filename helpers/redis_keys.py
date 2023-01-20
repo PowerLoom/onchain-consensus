@@ -11,7 +11,7 @@ def get_epoch_submission_schedule_key(project_id, epoch_end):
     return f'projectID:{project_id}:{epoch_end}:centralizedConsensus:submissionSchedule'
 
 
-def get_project_finalized_epochs_key(project_id):
+def get_project_finalized_epoch_cids_htable(project_id):
     return f'projectID:{project_id}:centralizedConsensus:finalizedEpochs'
 
 

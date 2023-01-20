@@ -7,10 +7,10 @@ from data_models import (
 from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi.responses import JSONResponse
 from settings.conf import settings
-from helpers.state import submission_delayed, register_submission, check_consensus
+from helpers.state import submission_delayed, register_submission, check_consensus, prune_finalized_cids_htable
 from helpers.redis_keys import *
-from auth.helpers.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
-from auth.helpers.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
+from auth.utils.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
+from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
 from utils.rate_limiter import load_rate_limiter_scripts
 from fastapi import FastAPI, Request, Response, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -100,6 +100,19 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
             return response
 
 
+async def periodic_finalized_cids_htable_cleanup():
+    project_id_pattern = "projectID:*:centralizedConsensus:peers"
+    while True:
+        pruning_tasks = list()
+        async for project_id in app.state.reader_redis_pool.scan_iter(match=project_id_pattern):
+            project_id = project_id.decode("utf-8").split(":")[1]
+            pruning_tasks.append(prune_finalized_cids_htable(project_id, app.state.reader_redis_pool))
+        pruning_tasks.append(asyncio.sleep(3600))
+        await asyncio.gather(
+            *pruning_tasks, return_exceptions=True
+        )
+
+
 @app.on_event('startup')
 async def startup_boilerplate():
     app.state.aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
@@ -107,6 +120,7 @@ async def startup_boilerplate():
     app.state.reader_redis_pool = app.state.aioredis_pool.reader_redis_pool
     app.state.writer_redis_pool = app.state.aioredis_pool.writer_redis_pool
     app.state.rate_limit_lua_script_shas = await load_rate_limiter_scripts(app.state.writer_redis_pool)
+    asyncio.ensure_future(periodic_finalized_cids_htable_cleanup())
 
 
 @app.post('/registerProjectPeer')
@@ -154,10 +168,6 @@ async def submit_snapshot(
     else:
         response_obj = SubmissionResponse(status=SubmissionAcceptanceStatus.accepted, delayedSubmission=False)
     consensus_status, finalized_cid = await register_submission(req_parsed, cur_ts, request.app.state.writer_redis_pool)
-    # if consensus achieved, set the key
-    if finalized_cid:
-        await request.app.state.writer_redis_pool.sadd(get_project_finalized_epochs_key(req_parsed.projectID),
-                                                       req_parsed.epoch.end)
 
     response_obj.status = consensus_status
     response_obj.finalizedSnapshotCID = finalized_cid
@@ -257,7 +267,7 @@ async def epoch_details(
     async for project_id in request.app.state.reader_redis_pool.scan_iter(match=projectID_pattern):
         project_id = project_id.decode("utf-8").split(":")[1]
         project_keys.append(project_id)
-        if await request.app.state.reader_redis_pool.sismember(get_project_finalized_epochs_key(project_id), epoch):
+        if await request.app.state.reader_redis_pool.hexists(get_project_finalized_epoch_cids_htable(project_id), epoch):
             finalized_projects_count += 1
 
     total_projects = len(project_keys)
@@ -364,7 +374,7 @@ async def get_snapshotters(
 
 
 @acquire_bounded_semaphore
-async def bound_check_consensus(
+async def bound_check_epoch_finalization(
         project_id: str,
         epoch_end: int,
         # FIXED: redis_pool is of type aioredis.Redis, not RedisPool
@@ -416,7 +426,7 @@ async def get_epochs(
     semaphore = asyncio.BoundedSemaphore(25)
     epochs = []
     epoch_status_tasks = [
-        bound_check_consensus(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore)
+        bound_check_epoch_finalization(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore)
         for epoch_end in epoch_ends_data
     ]
     epoch_status_task_results = await asyncio.gather(*epoch_status_tasks)

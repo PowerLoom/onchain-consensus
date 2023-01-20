@@ -98,6 +98,11 @@ class EpochConfig(BaseModel):
     history_length: int
 
 
+class ConsensusCriteria(BaseModel):
+    min_snapshotter_count: int
+    percentage: int
+
+
 class ChainConfig(BaseModel):
     rpc: RPCConfig
     chain_id: int
@@ -106,6 +111,7 @@ class ChainConfig(BaseModel):
 
 class SettingsConf(BaseModel):
     consensus_service: ConsensusService
+    consensus_criteria: ConsensusCriteria
     redis: RedisConfig
     test_redis: Optional[RedisConfig]
     chain: ChainConfig

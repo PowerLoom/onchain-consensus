@@ -10,10 +10,10 @@ from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
 from json.decoder import JSONDecodeError
 
-from auth.helpers.data_models import AuthCheck
-from auth.helpers.data_models import RateLimitAuthCheck
-from auth.helpers.data_models import UserStatusEnum
-from auth.helpers.redis_keys import user_details_htable
+from auth.utils.data_models import AuthCheck
+from auth.utils.data_models import RateLimitAuthCheck
+from auth.utils.data_models import UserStatusEnum
+from auth.utils.redis_keys import user_details_htable
 from data_models import PeerUUIDIncludedRequests, SnapshotterMetadata
 from helpers import redis_keys
 from settings.conf import settings as consensus_settings
