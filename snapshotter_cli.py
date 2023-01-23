@@ -63,7 +63,7 @@ def add_snapshotter(
         if redis_conn.hexists(get_snapshotter_info_snapshotter_mapping_key(), user_metadata.uuid):
             typer.echo(f"Error: The uuid {user_metadata.uuid} already exists.")
             return
-            
+
         # Check if alias already exists
         if redis_conn.exists(get_snapshotter_info_key(alias)):
             typer.echo(f"Error: The alias {alias} already exists.")
@@ -104,7 +104,7 @@ def disable_snapshotter(alias: str):
     metadata = json.loads(redis_conn.get(get_snapshotter_info_key(alias)))
     
     user_metadata = SnapshotterMetadata(**metadata)
-    SnapshotterMetadata.active = UserStatusEnum.inactive
+    user_metadata.active = UserStatusEnum.inactive
     redis_conn.set(get_snapshotter_info_key(alias), json.dumps(user_metadata.dict()))
 
     # remove snapshotter's UUID from the set of allowed snapshotters
@@ -138,7 +138,7 @@ def enable_snapshotter(alias: str):
     metadata = json.loads(redis_conn.get(get_snapshotter_info_key(alias)))
     
     user_metadata = SnapshotterMetadata(**metadata)
-    SnapshotterMetadata.active = UserStatusEnum.active
+    user_metadata.active = UserStatusEnum.active
     redis_conn.set(get_snapshotter_info_key(alias), json.dumps(user_metadata.dict()))
 
     # Add snapshotter's UUID to the set of allowed snapshotters
