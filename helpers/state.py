@@ -58,6 +58,9 @@ async def set_submission_schedule(
         ex=settings.consensus_service.keys_ttl
     )
     # loop.call_later(delay, callback, *args, context=None)¶
+
+    # TODO: Doesn't work, call_later expects a sync function call
+    # ref https://stackoverflow.com/questions/48070296/python-asyncio-recursion-with-call-later
     asyncio.get_running_loop().call_later(
         settings.consensus_service.submission_window,
         check_consensus, project_id, epoch_end, redis_conn
@@ -118,13 +121,16 @@ async def check_consensus(
 
     sub_count_map = {k: len(cid_submission_map[k]) for k in cid_submission_map.keys()}
     num_submitted_peers = sum(sub_count_map.values())
-    if int(time.time()) >= epoch_schedule.end:
+    if epoch_schedule and int(time.time()) >= epoch_schedule.end:
         if num_submitted_peers < settings.consensus_criteria.min_snapshotter_count:
             return SubmissionAcceptanceStatus.indeterminate, None
         divisor = num_submitted_peers
     else:
         # when deadline is not over, consider conservative calculation against all expected peers
         divisor = await redis_conn.scard(get_project_epoch_specific_accepted_peers_key(project_id, epoch_end))
+    if divisor == 0:
+        return SubmissionAcceptanceStatus.indeterminate, None
+        
     for cid, sub_count in sub_count_map.items():
         # find one CID on which consensus has been reached
         if sub_count/divisor * 100 >= settings.consensus_criteria.percentage or \

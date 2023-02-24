@@ -121,6 +121,8 @@ async def startup_boilerplate():
     app.state.writer_redis_pool = app.state.aioredis_pool.writer_redis_pool
     app.state.rate_limit_lua_script_shas = await load_rate_limiter_scripts(app.state.writer_redis_pool)
     asyncio.ensure_future(periodic_finalized_cids_htable_cleanup())
+    app.state.auth = dict()
+    app.state.snapshotter_aliases = dict()
 
 
 @app.post('/registerProjectPeer')

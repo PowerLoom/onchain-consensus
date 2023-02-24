@@ -19,28 +19,17 @@ from helpers import redis_keys
 from settings.conf import settings as consensus_settings
 from utils.rate_limiter import generic_rate_limiter
 
-async def incr_success_calls_count(
-        auth_redis_conn: aioredis.Redis,
+def incr_success_calls_count(
+        request: Request,
         rate_limit_auth_dep: RateLimitAuthCheck,
 ):
-    # on success
-    await auth_redis_conn.hincrby(
-        name=user_details_htable(rate_limit_auth_dep.owner.email),
-        key='callsCount',
-        amount=1,
-    )
+    request.app.state.auth[rate_limit_auth_dep.owner.alias].callsCount += 1
 
-
-async def incr_throttled_calls_count(
-        auth_redis_conn: aioredis.Redis,
+def incr_throttled_calls_count(
+        request: Request,
         rate_limit_auth_dep: RateLimitAuthCheck,
 ):
-    # on throttle
-    await auth_redis_conn.hincrby(
-        name=user_details_htable(rate_limit_auth_dep.owner.email),
-        key='throttledCount',
-        amount=1,
-    )
+    request.app.state.auth[rate_limit_auth_dep.owner.alias].throttledCount += 1
 
 
 def inject_rate_limit_fail_response(rate_limit_auth_check_dependency: RateLimitAuthCheck) -> JSONResponse:
@@ -94,21 +83,31 @@ async def auth_check(
             user_ip = ip_list[0]  # first address in list is User IP
         else:
             user_ip = request.client.host  # For local development
-        ip_user_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(alias=user_ip))
-        if not ip_user_dets_b:
-            public_owner = SnapshotterMetadata(
-                alias=user_ip,
-                name=user_ip,
-                email=user_ip,
-                rate_limit=consensus_settings.rate_limit,
-                active=UserStatusEnum.active,
-                callsCount=0,
-                throttledCount=0,
-                next_reset_at=int(time.time()) + 86400,
-            )
-            await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=user_ip), public_owner.json())
+        
+        # If user is not in cache, get from redis and add to cache
+        if user_ip not in request.app.state.auth:
+            ip_user_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(alias=user_ip))
+            # if user is not in redis, create a new one
+            if not ip_user_dets_b:
+                public_owner = SnapshotterMetadata(
+                    alias=user_ip,
+                    name=user_ip,
+                    email=user_ip,
+                    rate_limit=consensus_settings.rate_limit,
+                    active=UserStatusEnum.active,
+                    callsCount=0,
+                    throttledCount=0,
+                    next_reset_at=int(time.time()) + 86400,
+                )
+                await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=user_ip), public_owner.json())
+            else:
+                public_owner = SnapshotterMetadata.parse_raw(ip_user_dets_b)
+
+            request.app.state.auth[user_ip] = public_owner
+
         else:
-            public_owner = SnapshotterMetadata.parse_raw(ip_user_dets_b)
+            public_owner = request.app.state.auth[user_ip]
+        
         return AuthCheck(
             authorized=public_owner.active == UserStatusEnum.active,
             api_key='public',
@@ -117,6 +116,7 @@ async def auth_check(
         )
     else:
         uuid_in_request = uuid_included_request_body.instanceID
+        # this will fail if snapshotter is deactivated, therefore safe to cache snapshotter_details
         uuid_found = await auth_redis_conn.sismember(
             redis_keys.get_snapshotter_info_allowed_snapshotters_key(), uuid_in_request
         )
@@ -127,14 +127,20 @@ async def auth_check(
                 reason='illegal peer/instance ID supplied' if not uuid_found else ''
             )
         else:
-            snapshotter_alias = await auth_redis_conn.hget(
-                redis_keys.get_snapshotter_info_snapshotter_mapping_key(),
-                uuid_in_request
-            )
-            snapshotter_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(
-                alias=snapshotter_alias.decode('utf-8'))
-            )
-            snapshotter_details = SnapshotterMetadata.parse_raw(snapshotter_dets_b)
+            if uuid_in_request in request.app.state.snapshotter_aliases:
+                snapshotter_details = request.app.state.snapshotter_aliases[uuid_in_request]
+            else:
+                snapshotter_alias = await auth_redis_conn.hget(
+                    redis_keys.get_snapshotter_info_snapshotter_mapping_key(),
+                    uuid_in_request
+                )
+                snapshotter_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(
+                    alias=snapshotter_alias.decode('utf-8'))
+                )
+                snapshotter_details = SnapshotterMetadata.parse_raw(snapshotter_dets_b)
+                request.app.state.snapshotter_aliases[uuid_in_request] = snapshotter_details
+                request.app.state.auth[snapshotter_details.alias] = snapshotter_details
+            
             return AuthCheck(
                 authorized=snapshotter_details.active == UserStatusEnum.active,
                 api_key=uuid_in_request,
@@ -175,8 +181,11 @@ async def rate_limit_auth_check(
                 violated_limit=violated_limit,
                 current_limit=auth_check_dep.owner.rate_limit,
             )
-            if not passed:
-                await incr_throttled_calls_count(auth_redis_conn, ret)
+
+            if passed:
+                incr_success_calls_count(request, ret)
+            else:
+                incr_throttled_calls_count(request, ret)
             return ret
         finally:
             if auth_check_dep.owner.next_reset_at <= int(time.time()):
@@ -184,7 +193,7 @@ async def rate_limit_auth_check(
                 owner_updated_obj.callsCount = 0
                 owner_updated_obj.throttledCount = 0
                 owner_updated_obj.next_reset_at = int(time.time()) + 86400
-                await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=auth_check_dep.owner.alias), owner_updated_obj.json())
+                request.state.auth[auth_check_dep.owner.alias] = owner_updated_obj
     else:
         return RateLimitAuthCheck(
             **auth_check_dep.dict(),
