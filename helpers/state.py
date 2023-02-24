@@ -8,23 +8,57 @@ from helpers.redis_keys import *
 from typing import Tuple, Union, Optional
 from redis import asyncio as aioredis
 import time
-
+from fastapi import Request
+from typing import Optional
 
 async def get_submission_schedule(
         project_id,
         epoch_end,
-        redis_conn: aioredis.Redis
-):
-    schedule = await redis_conn.get(
-        get_epoch_submission_schedule_key(
-            project_id=project_id,
-            epoch_end=epoch_end
-        )
-    )
-    if not schedule:
-        return None
+        redis_conn: aioredis.Redis,
+        request: Optional[Request] = None
+):  
+    if request:
+        schedule = request.app.state.submission_schedule.get((project_id, epoch_end))
+        if not schedule:
+            schedule = await redis_conn.get(
+                get_epoch_submission_schedule_key(
+                    project_id=project_id,
+                    epoch_end=epoch_end
+                )
+            )
+            if not schedule:
+                return None
+            else:
+                schedule = SubmissionSchedule.parse_raw(schedule)
+                request.app.state.submission_schedule.put((project_id, epoch_end), schedule)
+        return schedule
     else:
-        return SubmissionSchedule.parse_raw(schedule)
+
+        schedule = await redis_conn.get(
+            get_epoch_submission_schedule_key(
+                project_id=project_id,
+                epoch_end=epoch_end
+            )
+        )
+        if not schedule:
+            return None
+        else:
+            return SubmissionSchedule.parse_raw(schedule)
+
+async def get_project_finalized_epoch_cids(project_id: str, epoch: int, redis_conn: aioredis.Redis, request: Optional[Request] = None):
+    if request:
+        cid = request.app.state.finalized_epoch_cids.get((project_id, epoch))
+        if not cid:
+            cid = await redis_conn.hget(get_project_finalized_epoch_cids_htable(project_id), epoch)
+            if cid:
+                cid = cid.decode('utf-8')
+                request.app.state.finalized_epoch_cids.put((project_id, epoch), cid)
+    else:
+        cid = await redis_conn.hget(get_project_finalized_epoch_cids_htable(project_id), epoch)
+        if cid:
+            cid = cid.decode('utf-8')
+    
+    return cid
 
 
 async def prune_finalized_cids_htable(
@@ -46,9 +80,15 @@ async def prune_finalized_cids_htable(
 async def set_submission_schedule(
         project_id,
         epoch_end,
-        redis_conn: aioredis.Redis
+        redis_conn: aioredis.Redis,
+        request: Optional[Request] = None
 ):
     cur_ts = int(time.time())
+    if request:
+        request.app.state.submission_schedule.put(
+            (project_id, epoch_end),
+            SubmissionSchedule(begin=cur_ts, end=cur_ts+settings.consensus_service.submission_window)
+            )
     await redis_conn.set(
         name=get_epoch_submission_schedule_key(
             project_id=project_id,
@@ -82,12 +122,12 @@ async def set_submission_accepted_peers(
     )
 
 
-async def submission_delayed(project_id, epoch_end, auto_init_schedule, redis_conn: aioredis.Redis):
-    schedule = await get_submission_schedule(project_id, epoch_end, redis_conn)
+async def submission_delayed(project_id, epoch_end, auto_init_schedule, redis_conn: aioredis.Redis, request: Optional[Request] = None):
+    schedule = await get_submission_schedule(project_id, epoch_end, redis_conn, request)
     if not schedule:
         if auto_init_schedule:
             await set_submission_accepted_peers(project_id, epoch_end, redis_conn)
-            await set_submission_schedule(project_id, epoch_end, redis_conn)
+            await set_submission_schedule(project_id, epoch_end, redis_conn, request)
         return False
     else:
         return int(time.time()) > schedule.end
@@ -96,12 +136,14 @@ async def submission_delayed(project_id, epoch_end, auto_init_schedule, redis_co
 async def check_consensus(
         project_id: str,
         epoch_end: int,
-        redis_conn: aioredis.Redis
+        redis_conn: aioredis.Redis,
+        request: Optional[Request] = None
 ) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
-    _ = await redis_conn.hget(get_project_finalized_epoch_cids_htable(project_id), epoch_end)
-    if _:
-        return SubmissionAcceptanceStatus.finalized, _.decode('utf-8')
-    epoch_schedule = await get_submission_schedule(project_id, epoch_end, redis_conn)
+    finalized_cid = await get_project_finalized_epoch_cids(project_id, epoch_end, redis_conn, request)
+    if finalized_cid:
+        return SubmissionAcceptanceStatus.finalized, finalized_cid
+
+    epoch_schedule = await get_submission_schedule(project_id, epoch_end, redis_conn, request)
     all_submissions = await redis_conn.hgetall(
         name=get_epoch_submissions_htable_key(
             project_id=project_id,
@@ -130,7 +172,7 @@ async def check_consensus(
         divisor = await redis_conn.scard(get_project_epoch_specific_accepted_peers_key(project_id, epoch_end))
     if divisor == 0:
         return SubmissionAcceptanceStatus.indeterminate, None
-        
+
     for cid, sub_count in sub_count_map.items():
         # find one CID on which consensus has been reached
         if sub_count/divisor * 100 >= settings.consensus_criteria.percentage or \
@@ -139,6 +181,7 @@ async def check_consensus(
                 name=get_project_finalized_epoch_cids_htable(project_id),
                 mapping={epoch_end: cid}
             )
+
             return SubmissionAcceptanceStatus.finalized, cid
     else:
         # find if deadline passed and yet no consensus reached
@@ -148,7 +191,8 @@ async def check_consensus(
 async def register_submission(
         submission: SnapshotSubmission,
         cur_ts: int,
-        redis_conn: aioredis.Redis
+        redis_conn: aioredis.Redis,
+        request: Optional[Request] = None
 ) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
     await redis_conn.hset(
         name=get_epoch_submissions_htable_key(
@@ -158,6 +202,7 @@ async def register_submission(
         key=submission.instanceID,
         value=SubmissionDataStoreEntry(snapshotCID=submission.snapshotCID, submittedTS=cur_ts).json()
     )
+
     if await redis_conn.ttl(name=get_epoch_submissions_htable_key(
             project_id=submission.projectID,
             epoch_end=submission.epoch.end,
@@ -169,4 +214,4 @@ async def register_submission(
             ),
             time=settings.consensus_service.keys_ttl
         )
-    return await check_consensus(submission.projectID, submission.epoch.end, redis_conn)
+    return await check_consensus(submission.projectID, submission.epoch.end, redis_conn, request)
