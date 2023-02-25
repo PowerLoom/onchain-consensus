@@ -1,4 +1,4 @@
-FROM nikolaik/python-nodejs:python3.9-nodejs18-bullseye
+FROM nikolaik/python-nodejs:python3.8-nodejs18-bullseye
 
 # Install the PM2 process manager for Node.js
 RUN npm install pm2 -g
@@ -16,6 +16,8 @@ COPY . .
 
 # Expose the port that the application will listen on
 EXPOSE 9030
+
+ENTRYPOINT sh init_processes.sh
 
 # Start the application using PM2
 # CMD pm2 start pm2.config.js && pm2 logs --lines 100
