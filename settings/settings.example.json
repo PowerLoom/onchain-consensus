@@ -6,7 +6,7 @@
 		"keys_ttl": 86400
 	},
 	"consensus_criteria":{
-        "min_snapshotter_count": 3,
+        "min_snapshotter_count": 2,
         "percentage": 66
     },
 	"rate_limit": "10000/day;20/minute;2/second",
