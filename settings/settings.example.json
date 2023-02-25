@@ -26,10 +26,7 @@
 		"rpc": {
 			"nodes": [
 				{
-					"url": "***"
-				},
-				{
-					"url": "***"
+					"url": "https://**rpc**"
 				}
 			],
 			"retry": 3,
