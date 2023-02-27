@@ -97,13 +97,9 @@ async def set_submission_schedule(
         value=SubmissionSchedule(begin=cur_ts, end=cur_ts+settings.consensus_service.submission_window).json(),
         ex=settings.consensus_service.keys_ttl
     )
-    # loop.call_later(delay, callback, *args, context=None)¶
-
-    # TODO: Doesn't work, call_later expects a sync function call
-    # ref https://stackoverflow.com/questions/48070296/python-asyncio-recursion-with-call-later
     asyncio.get_running_loop().call_later(
         settings.consensus_service.submission_window,
-        check_consensus, project_id, epoch_end, redis_conn
+        wrapped_check_consensus, project_id, epoch_end, redis_conn
     )
 
 
@@ -132,6 +128,8 @@ async def submission_delayed(project_id, epoch_end, auto_init_schedule, redis_co
     else:
         return int(time.time()) > schedule.end
 
+def wrapped_check_consensus(project_id: str, epoch_end: int, redis_conn: aioredis.Redis):
+    asyncio.ensure_future(check_consensus(project_id, epoch_end, redis_conn))
 
 async def check_consensus(
         project_id: str,

@@ -193,7 +193,7 @@ async def rate_limit_auth_check(
                 owner_updated_obj.callsCount = 0
                 owner_updated_obj.throttledCount = 0
                 owner_updated_obj.next_reset_at = int(time.time()) + 86400
-                request.state.auth[auth_check_dep.owner.alias] = owner_updated_obj
+                request.app.state.auth[auth_check_dep.owner.alias] = owner_updated_obj
     else:
         return RateLimitAuthCheck(
             **auth_check_dep.dict(),
