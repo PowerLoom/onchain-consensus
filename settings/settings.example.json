@@ -6,18 +6,18 @@
 		"keys_ttl": 86400
 	},
 	"consensus_criteria":{
-        "min_snapshotter_count": 3,
+        "min_snapshotter_count": 1,
         "percentage": 66
     },
-	"rate_limit": "10000/day;20/minute;2/second",
+	"rate_limit": "100000/day;200/minute;20/second",
 	"redis": {
-		"host": "127.0.0.1",
+		"host": "redis",
 		"port": 6379,
 		"db": 0,
 		"password": null
 	},
 	"test_redis": {
-		"host": "127.0.0.1",
+		"host": "redis",
 		"port": 6379,
 		"db": 1,
 		"password": null
@@ -26,10 +26,7 @@
 		"rpc": {
 			"nodes": [
 				{
-					"url": "***"
-				},
-				{
-					"url": "***"
+					"url": "https://**rpc**"
 				}
 			],
 			"retry": 3,
@@ -43,5 +40,5 @@
 			"history_length": 1000
 		}
 	},
-	"ticker_begin_block": 16419011
+	"ticker_begin_block": 0
 }
