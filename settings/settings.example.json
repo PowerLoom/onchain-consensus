@@ -11,13 +11,13 @@
     },
 	"rate_limit": "100000/day;200/minute;20/second",
 	"redis": {
-		"host": "127.0.0.1",
+		"host": "redis",
 		"port": 6379,
 		"db": 0,
 		"password": null
 	},
 	"test_redis": {
-		"host": "127.0.0.1",
+		"host": "redis",
 		"port": 6379,
 		"db": 1,
 		"password": null
