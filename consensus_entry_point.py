@@ -12,6 +12,9 @@ from helpers.redis_keys import *
 from auth.utils.helpers import rate_limit_auth_check, inject_rate_limit_fail_response
 from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
 from utils.rate_limiter import load_rate_limiter_scripts
+from utils.lru_cache import LRUCache
+from helpers.state import get_project_finalized_epoch_cids
+from helpers.state import get_submission_schedule
 from fastapi import FastAPI, Request, Response, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from functools import wraps
@@ -121,6 +124,12 @@ async def startup_boilerplate():
     app.state.writer_redis_pool = app.state.aioredis_pool.writer_redis_pool
     app.state.rate_limit_lua_script_shas = await load_rate_limiter_scripts(app.state.writer_redis_pool)
     asyncio.ensure_future(periodic_finalized_cids_htable_cleanup())
+    app.state.auth = dict()
+    app.state.snapshotter_aliases = dict()
+    # Better to use a LRC Cache sort of thing here for auto cleanup
+    app.state.submission_schedule = LRUCache(1000)
+    app.state.finalized_epoch_cids = LRUCache(1000)
+
 
 
 @app.post('/registerProjectPeer')
@@ -162,12 +171,13 @@ async def submit_snapshot(
             project_id=req_parsed.projectID,
             epoch_end=req_parsed.epoch.end,
             auto_init_schedule=True,
-            redis_conn=request.app.state.writer_redis_pool
+            redis_conn=request.app.state.writer_redis_pool,
+            request = request
     ):
         response_obj = SubmissionResponse(status=SubmissionAcceptanceStatus.accepted, delayedSubmission=True)
     else:
         response_obj = SubmissionResponse(status=SubmissionAcceptanceStatus.accepted, delayedSubmission=False)
-    consensus_status, finalized_cid = await register_submission(req_parsed, cur_ts, request.app.state.writer_redis_pool)
+    consensus_status, finalized_cid = await register_submission(req_parsed, cur_ts, request.app.state.writer_redis_pool, request=request)
 
     response_obj.status = consensus_status
     response_obj.finalizedSnapshotCID = finalized_cid
@@ -189,7 +199,7 @@ async def check_submission_status(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     status, finalized_cid = await check_consensus(
-        project_id=req_parsed.projectID, redis_conn=request.app.state.writer_redis_pool, epoch_end=req_parsed.epoch.end
+        project_id=req_parsed.projectID, redis_conn=request.app.state.writer_redis_pool, epoch_end=req_parsed.epoch.end, request=request
     )
     if status == SubmissionAcceptanceStatus.notsubmitted:
         response.status_code = 400
@@ -201,7 +211,8 @@ async def check_submission_status(
                 req_parsed.projectID,
                 epoch_end=req_parsed.epoch.end,
                 auto_init_schedule=False,
-                redis_conn=request.app.state.writer_redis_pool
+                redis_conn=request.app.state.writer_redis_pool,
+                request = request
             ),
             finalizedSnapshotCID=finalized_cid
         ).dict()
@@ -228,7 +239,7 @@ async def report_issue(
         mapping={json.dumps(req_parsed.dict()): req_parsed.timeOfReporting})
 
     # pruning expired items
-    request.app.state.writer_redis_pool.zremrangebyscore(
+    await request.app.state.writer_redis_pool.zremrangebyscore(
         get_snapshotter_issues_reported_key(snapshotter_id=req_parsed.instanceID), 0,
         int(time.time()) - (7 * 24 * 60 * 60)
     )
@@ -267,7 +278,7 @@ async def epoch_details(
     async for project_id in request.app.state.reader_redis_pool.scan_iter(match=projectID_pattern):
         project_id = project_id.decode("utf-8").split(":")[1]
         project_keys.append(project_id)
-        if await request.app.state.reader_redis_pool.hexists(get_project_finalized_epoch_cids_htable(project_id), epoch):
+        if await get_project_finalized_epoch_cids(project_id, epoch, request.app.state.reader_redis_pool, request):
             finalized_projects_count += 1
 
     total_projects = len(project_keys)
@@ -300,7 +311,7 @@ async def epoch_status(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     status, finalized_cid = await check_consensus(
-        req_parsed.projectID, req_parsed.epoch.end, request.app.state.reader_redis_pool
+        req_parsed.projectID, req_parsed.epoch.end, request.app.state.reader_redis_pool, request
     )
     if status != SubmissionAcceptanceStatus.finalized:
         status = EpochConsensusStatus.no_consensus
@@ -379,10 +390,11 @@ async def bound_check_epoch_finalization(
         epoch_end: int,
         # FIXED: redis_pool is of type aioredis.Redis, not RedisPool
         redis_pool: aioredis.Redis,
-        semaphore: asyncio.BoundedSemaphore
+        semaphore: asyncio.BoundedSemaphore,
+        request: Request
 ) -> Tuple[SubmissionAcceptanceStatus, Union[str, None]]:
     """Check consensus in a bounded way. Will run N paralell threads at once max."""
-    consensus_status = await check_consensus(project_id, epoch_end, redis_pool)
+    consensus_status = await check_consensus(project_id, epoch_end, redis_pool, request)
     return consensus_status
 
 
@@ -426,7 +438,7 @@ async def get_epochs(
     semaphore = asyncio.BoundedSemaphore(25)
     epochs = []
     epoch_status_tasks = [
-        bound_check_epoch_finalization(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore)
+        bound_check_epoch_finalization(project_id, epoch_end, request.app.state.reader_redis_pool, semaphore=semaphore, request=request)
         for epoch_end in epoch_ends_data
     ]
     epoch_status_task_results = await asyncio.gather(*epoch_status_tasks)
@@ -507,12 +519,11 @@ async def get_submission_status(
     and the final snapshot CID. Also includes the details of snapshot submissions, such as snapshotter ID and 
     submission time. """
 
-    submission_schedule = await request.app.state.reader_redis_pool.get(
-        get_epoch_submission_schedule_key(project_id, epoch))
+    submission_schedule = await get_submission_schedule(project_id, epoch, request.app.state.reader_redis_pool, request)
+    
     if not submission_schedule:
         return JSONResponse(status_code=404, content={
             "message": f"Submission schedule for projectID {project_id} and epoch {epoch} not found"})
-    submission_schedule = json.loads(submission_schedule)
 
     submission_data = await request.app.state.reader_redis_pool.hgetall(
         get_epoch_submissions_htable_key(project_id, epoch)
@@ -525,7 +536,7 @@ async def get_submission_status(
     submissions = []
     for snapshotter_uuid, v in submission_data.items():
         snapshotter_uuid, v = snapshotter_uuid.decode("utf-8"), json.loads(v)
-        if v["submittedTS"] < submission_schedule["end"]:
+        if v["submittedTS"] < submission_schedule.end:
             submission_status = SubmissionStatus.within_schedule
         else:
             submission_status = SubmissionStatus.delayed
