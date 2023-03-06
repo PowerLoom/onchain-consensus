@@ -5,11 +5,10 @@ if [ ! -f "settings/settings.json" ]; then
     exit 1;
 fi
 
-if [ -z "$UUID" ]; then
-    echo "UUID not found in .env - autopopulating to 'generated-uuid'!";
-    export uuid="${UUID:-generated-uuid}"
+if [ ! -z "$UUID" ]; then
+    echo "UUID found in .env - using provided UUID!";
+    export uuid="${UUID}"
     echo "UUID set to $uuid";
-    #exit 1;
 fi
 
 echo 'starting processes...';
