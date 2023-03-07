@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source .env
+if [ -f ".env" ]; then
+    source .env
+fi
 
 if [ ! -f "settings/settings.json" ]; then
     echo "Settings is not populated, exiting!";
@@ -13,10 +15,15 @@ fi
 
 export uuid="${UUID:-generated-uuid}"
 echo "UUID set to $uuid";
+export alias="${ALIAS:-generated-alias}"
+echo "Alias set to $alias";
+export email="${EMAIL:-generated@example.com}"
+echo "Email set to $email";
+exit;
 
 echo 'starting processes...';
 pm2 start pm2.config.js
 
-poetry run python -m snapshotter_cli add-snapshotter "{\"rate_limit\": \"6000000/day;10000/minute;600/second\", \"uuid\": \"$uuid\", \"active\": \"active\", \"name\": \"generated 1\", \"email\": \"generated1@example.com\", \"alias\": \"generated-1\"}";
+poetry run python -m snapshotter_cli add-snapshotter "{\"rate_limit\": \"6000000/day;10000/minute;600/second\", \"uuid\": \"$uuid\", \"active\": \"active\", \"name\": \"generated 1\", \"email\": \"$email\", \"alias\": \"$alias\"}";
 
 pm2 logs --lines 1000
