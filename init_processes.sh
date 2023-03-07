@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source .env
+
 if [ ! -f "settings/settings.json" ]; then
     echo "Settings is not populated, exiting!";
     exit 1;
@@ -7,10 +9,10 @@ fi
 
 if [ -z "$UUID" ]; then
     echo "UUID not found in .env - autopopulating to 'generated-uuid'!";
-    export uuid="${UUID:-generated-uuid}"
-    echo "UUID set to $uuid";
-    #exit 1;
 fi
+
+export uuid="${UUID:-generated-uuid}"
+echo "UUID set to $uuid";
 
 echo 'starting processes...';
 pm2 start pm2.config.js
