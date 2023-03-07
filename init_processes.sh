@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ -f ".env" ]; then
-    source .env
+    . ./.env
 fi
 
 if [ ! -f "settings/settings.json" ]; then
