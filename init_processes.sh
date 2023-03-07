@@ -1,5 +1,9 @@
 #!/bin/bash
 
+echo 'starting processes...';
+pm2 start pm2.config.js
+
+echo 'waiting for processes to start...';
 if [ -f ".env" ]; then
     . ./.env
 fi
@@ -23,8 +27,6 @@ export email="${EMAIL:-generated@example.com}"
 echo "Email set to $email";
 echo "{\"rate_limit\": \"6000000/day;10000/minute;600/second\", \"uuid\": \"$uuid\", \"active\": \"active\", \"name\": \"$name\", \"email\": \"$email\", \"alias\": \"$alias\"}";
 
-echo 'starting processes...';
-pm2 start pm2.config.js
 
 poetry run python -m snapshotter_cli add-snapshotter "{\"rate_limit\": \"6000000/day;10000/minute;600/second\", \"uuid\": \"$uuid\", \"active\": \"active\", \"name\": \"$name\", \"email\": \"$email\", \"alias\": \"$alias\"}";
 
