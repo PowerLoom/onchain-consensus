@@ -79,7 +79,7 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
     request.state.request_id = request_id
 
     with service_logger.contextualize(request_id=request_id):
-        service_logger.info('Request started')
+        service_logger.info('Request started for: {}', request.url)
         try:
             response = await call_next(request)
 
