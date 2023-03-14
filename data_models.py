@@ -78,6 +78,7 @@ class ConsensusService(BaseModel):
     submission_window: int
     host: str
     port: str
+    keepalive_secs: int
     keys_ttl: int = 86400
 
 
@@ -108,6 +109,8 @@ class ChainConfig(BaseModel):
     chain_id: int
     epoch: EpochConfig
 
+class RLimit(BaseModel):
+    file_descriptors: int
 
 class SettingsConf(BaseModel):
     consensus_service: ConsensusService
@@ -116,6 +119,7 @@ class SettingsConf(BaseModel):
     test_redis: Optional[RedisConfig]
     chain: ChainConfig
     rate_limit: str
+    rlimit: RLimit
     ticker_begin_block: Optional[int]
 
 
