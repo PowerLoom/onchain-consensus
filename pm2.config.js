@@ -22,12 +22,14 @@ module.exports = {
     },
     {
       name   : "off-chain-consensus",
-      script: `poetry run gunicorn -k uvicorn.workers.UvicornWorker consensus_entry_point:app --workers 20 -b ${settings.consensus_service.host}:${settings.consensus_service.port}`,
+      script: `poetry run python -m gunicorn_main_launcher`,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,
+      kill_timeout : 3000,
       env: {
         NODE_ENV: NODE_ENV,
-      }
+        GUNICORN_WORKERS: 20
+      },
     }
   ]
 }

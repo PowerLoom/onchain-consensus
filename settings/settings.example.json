@@ -3,7 +3,8 @@
 		"submission_window": 60,
 		"host": "0.0.0.0",
 		"port": 9030,
-		"keys_ttl": 86400
+		"keys_ttl": 86400,
+		"keepalive_secs": 600
 	},
 	"consensus_criteria":{
         "min_snapshotter_count": 1,
@@ -39,6 +40,9 @@
 			"block_time": 15,
 			"history_length": 1000
 		}
+	},
+	"rlimit": {
+		"file_descriptors": 2048
 	},
 	"ticker_begin_block": 0
 }
