@@ -41,6 +41,18 @@
 			"history_length": 1000
 		}
 	},
+	"anchor_chain_rpc": {
+		"full_nodes": [{
+		  "url": "https://rpc-url",
+		  "rate_limit": "10000000/day;2000/minute;100/second"
+		}],
+		"chain_id": 11155111,
+		"protocol_state_address": "0x000000",
+		"owner_address": "0x000000",
+		"owner_private_key": "0x000000",
+		"retry": 5,
+		"request_time_out": 5
+	},
 	"rlimit": {
 		"file_descriptors": 2048
 	},

@@ -48,3 +48,19 @@ def get_snapshotter_info_allowed_snapshotters_key():
 # HTABLE mapping snapshotter UUID -> snapshotter alias
 def get_snapshotter_info_snapshotter_mapping_key():
     return 'snapshotterInfo:snapshotterMapping'
+
+rpc_json_rpc_calls = (
+    'rpc:jsonRpc:calls'
+)
+
+rpc_get_event_logs_calls = (
+    'rpc:eventLogsCount:calls'
+)
+
+rpc_web3_calls = (
+    'rpc:web3:calls'
+)
+
+rpc_blocknumber_calls = (
+    'rpc:blocknumber:calls'
+)

@@ -91,6 +91,21 @@ class RPCConfig(BaseModel):
     retry: int
     request_timeout: int
 
+class RPCNodeConfig(BaseModel):
+    url: str
+    rate_limit: str
+
+class AnchorRPCConfig(BaseModel):
+    full_nodes: List[RPCNodeConfig]
+    archive_nodes: Optional[List[RPCNodeConfig]]
+    force_archive_blocks: Optional[int]
+    retry: int
+    chain_id: int
+    protocol_state_address: str
+    owner_address: str
+    owner_private_key: str
+    request_time_out: int
+
 
 class EpochConfig(BaseModel):
     height: int
@@ -118,6 +133,7 @@ class SettingsConf(BaseModel):
     redis: RedisConfig
     test_redis: Optional[RedisConfig]
     chain: ChainConfig
+    anchor_chain_rpc: AnchorRPCConfig
     rate_limit: str
     rlimit: RLimit
     ticker_begin_block: Optional[int]

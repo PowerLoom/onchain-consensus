@@ -18,7 +18,16 @@ from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
+from utils.transaction_utils import write_transaction_with_retry
+from web3 import Web3
 
+protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
+
+# load abi from json file and create contract object
+with open("utils/static/abi.json", "r") as f:
+    abi = json.load(f)
+w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+protocol_state_contract = w3.eth.contract(address=settings.anchor_chain_rpc.protocol_state_address, abi=abi)
 
 def chunks(start_idx, stop_idx, n):
     run_idx = 0
@@ -181,6 +190,15 @@ class EpochGenerator:
                         generated_block_counter += 1
                         self._logger.debug('Epoch of sufficient length found: {}', epoch_block)
 
+                        tx_hash = write_transaction_with_retry(
+                            settings.anchor_chain_rpc.owner_address,
+                            settings.anchor_chain_rpc.owner_private_key,
+                            protocol_state_contract,
+                            'releaseEpoch',
+                            epoch_block['begin'],
+                            epoch_block['end'],
+                            )
+                        self._logger.debug('Epoch Released! Transaction hash: {}', tx_hash)
                         await self._writer_redis_pool.set(name=get_epoch_generator_last_epoch(),
                                                           value=epoch_block['end'])
                         await self._writer_redis_pool.zadd(
