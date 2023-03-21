@@ -13,6 +13,9 @@ from auth.utils.helpers import rate_limit_auth_check, inject_rate_limit_fail_res
 from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, SnapshotterMetadata
 from utils.rate_limiter import load_rate_limiter_scripts
 from utils.lru_cache import LRUCache
+from utils.rpc import RpcHelper
+from utils.transaction_utils import write_transaction
+from utils.transaction_utils import generate_account_from_uuid
 from helpers.state import get_project_finalized_epoch_cids
 from helpers.state import get_submission_schedule
 from fastapi import FastAPI, Request, Response, Query, Depends
@@ -26,14 +29,8 @@ import redis
 import time
 import uuid
 import asyncio
-from loguru import logger
-
-FORMAT = '{time:MMMM D, YYYY > HH:mm:ss!UTC} | {level} | {message}| {extra}'
-
-logger.remove(0)
-logger.add(sys.stdout, level='DEBUG', format=FORMAT)
-logger.add(sys.stderr, level='WARNING', format=FORMAT)
-logger.add(sys.stderr, level='ERROR', format=FORMAT)
+from utils.default_logger import logger
+from web3 import Web3
 
 service_logger = logger.bind(service='PowerLoom|OffChainConsensus|ServiceEntry')
 
@@ -129,6 +126,14 @@ async def startup_boilerplate():
     # Better to use a LRC Cache sort of thing here for auto cleanup
     app.state.submission_schedule = LRUCache(1000)
     app.state.finalized_epoch_cids = LRUCache(1000)
+    app.state.rpc_helper = RpcHelper()
+    app.state.protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
+
+    # load abi from json file and create contract object
+    with open("utils/static/abi.json", "r") as f:
+        abi = json.load(f)
+    app.state.w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+    app.state.protocol_state_contract = app.state.w3.eth.contract(address=settings.anchor_chain_rpc.protocol_state_address, abi=abi)
 
 
 
@@ -145,6 +150,33 @@ async def register_peer_against_project(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    
+    account, apkey = generate_account_from_uuid(req_parsed.instanceID)
+
+    # estimate gas then send 
+    try:
+        est_gas = app.state.protocol_state_contract.functions.registerPeer(
+            account,
+            req_parsed.projectID
+        ).estimateGas({'from': settings.anchor_chain_rpc.owner_address})
+    except Exception as E:
+        return {
+            'info': {
+                'success': False,
+                'response': f'Transaction will most likely fail with error {E}',
+            }
+        }
+    
+    tx_hash = write_transaction(
+        settings.anchor_chain_rpc.owner_address,
+        settings.anchor_chain_rpc.owner_private_key,
+        request.app.state.protocol_state_contract,
+        'registerPeer',
+        account,
+        req_parsed.projectID
+        )
+    service_logger.info("Peer Registration transaction sent! Transaction hash: {}", tx_hash)
+    
     await request.app.state.writer_redis_pool.sadd(
         get_project_registered_peers_set_key(req_parsed.projectID),
         req_parsed.instanceID
@@ -164,6 +196,37 @@ async def submit_snapshot(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    
+    account, apkey = generate_account_from_uuid(req_parsed.instanceID)
+    # estimate gas then send 
+    try:
+        est_gas = app.state.protocol_state_contract.functions.commitRecord(
+            req_parsed.snapshotCID,
+            req_parsed.epoch.end,
+            req_parsed.projectID,
+            account
+            ).estimateGas({'from': settings.anchor_chain_rpc.owner_address})
+    except Exception as E:
+        return {
+            'info': {
+                'success': False,
+                'response': f'Transaction will most likely fail with error {E}',
+            }
+        }
+
+    tx_hash = write_transaction(
+        settings.anchor_chain_rpc.owner_address,
+        settings.anchor_chain_rpc.owner_private_key,
+        request.app.state.protocol_state_contract,
+        'commitRecord',
+        req_parsed.snapshotCID,
+        req_parsed.epoch.end,
+        req_parsed.projectID,
+        account
+        )
+
+    service_logger.info("Submit snapshot transaction submitted! Transaction hash: {}", tx_hash)
+    
     cur_ts = int(time.time())
     service_logger.debug('Snapshot for submission: {}', req_parsed)
     # get last accepted epoch?

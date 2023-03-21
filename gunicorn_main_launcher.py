@@ -6,7 +6,7 @@ from gunicorn.app.base import BaseApplication
 from gunicorn.glogging import Logger
 from loguru import logger
 from settings.conf import settings
-from consensus_entry_point_onchain import app
+from consensus_entry_point import app
 
 WORKERS = int(os.environ.get("GUNICORN_WORKERS", "20"))
 
