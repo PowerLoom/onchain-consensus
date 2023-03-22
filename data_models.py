@@ -80,6 +80,7 @@ class ConsensusService(BaseModel):
     port: str
     keepalive_secs: int
     keys_ttl: int = 86400
+    gunicorn_workers: int = 20
 
 
 class NodeConfig(BaseModel):

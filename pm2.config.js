@@ -1,7 +1,6 @@
 // this means if app restart {MAX_RESTART} times in 1 min then it stops
 
 const { readFileSync } = require('fs');
-const settings = JSON.parse(readFileSync('settings/settings.json'));
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -28,7 +27,6 @@ module.exports = {
       kill_timeout : 3000,
       env: {
         NODE_ENV: NODE_ENV,
-        GUNICORN_WORKERS: 20
       },
     }
   ]

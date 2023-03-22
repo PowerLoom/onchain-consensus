@@ -8,9 +8,6 @@ from loguru import logger
 from settings.conf import settings
 from consensus_entry_point import app
 
-WORKERS = int(os.environ.get("GUNICORN_WORKERS", "20"))
-
-
 def post_worker_init(worker):
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (settings.rlimit.file_descriptors, hard))
@@ -42,7 +39,7 @@ if __name__ == '__main__':
     options = {
         "bind": f"{settings.consensus_service.host}:{settings.consensus_service.port}",
         "keepalive": settings.consensus_service.keepalive_secs,
-        "workers": WORKERS,
+        "workers": settings.consensus_service.gunicorn_workers,
         "timeout": 120,
         "worker_class": "uvicorn.workers.UvicornWorker",
         "post_worker_init": post_worker_init
