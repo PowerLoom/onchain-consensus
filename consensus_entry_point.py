@@ -1,5 +1,5 @@
 from data_models import (
-    SnapshotSubmission, SubmissionResponse, PeerRegistrationRequest, SubmissionAcceptanceStatus, SnapshotBase,
+    EpochStatusRequest, SnapshotSubmission, SubmissionResponse, PeerRegistrationRequest, SubmissionAcceptanceStatus, SnapshotBase,
     EpochConsensusStatus, ProjectSpecificSnapshotters, Epoch, EpochData, EpochDataPage, Submission, SubmissionStatus,
     Message, EpochInfo,
     EpochStatus, EpochDetails, SnapshotterIssue, SnapshotterAliasIssue
@@ -300,7 +300,7 @@ async def epoch_details(
 @app.post('/epochStatus')
 async def epoch_status(
         request: Request,
-        req_parsed: SnapshotBase,
+        req_parsed: EpochStatusRequest,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(rate_limit_auth_check)
 ):
@@ -310,14 +310,24 @@ async def epoch_status(
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-    status, finalized_cid = await check_consensus(
-        req_parsed.projectID, req_parsed.epoch.end, request.app.state.reader_redis_pool, request
-    )
-    if status != SubmissionAcceptanceStatus.finalized:
-        status = EpochConsensusStatus.no_consensus
-    else:
-        status = EpochConsensusStatus.consensus_achieved
-    return SubmissionResponse(status=status, delayedSubmission=False, finalizedSnapshotCID=finalized_cid).dict()
+    epoch_status_check_tasks = {
+        epoch.end: check_consensus(
+            req_parsed.projectID, epoch.end, request.app.state.reader_redis_pool, request
+        ) for epoch in req_parsed.epochs
+    }
+    # deliberately not setting return_exceptions=True because the entire query would rather fail becaue of CancelledError being raised
+    # insteead of returning a partial result with certain epoch status being set to null or something like that
+    results = await asyncio.gather(*epoch_status_check_tasks.values())
+    return_map: Dict[int, dict] = dict()
+    epoch_query_list = list(epoch_status_check_tasks.keys())
+    for idx, result in enumerate(results):
+        status, finalized_cid = result
+        if status != SubmissionAcceptanceStatus.finalized:
+            status = EpochConsensusStatus.no_consensus
+        else:
+            status = EpochConsensusStatus.consensus_achieved
+        return_map[epoch_query_list[idx]] = SubmissionResponse(status=status, delayedSubmission=False, finalizedSnapshotCID=finalized_cid).dict()
+    return return_map
 
 
 # List of projects tracked/registered '/metrics/projects' .
