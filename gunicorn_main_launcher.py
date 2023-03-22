@@ -43,6 +43,7 @@ if __name__ == '__main__':
         "bind": f"{settings.consensus_service.host}:{settings.consensus_service.port}",
         "keepalive": settings.consensus_service.keepalive_secs,
         "workers": WORKERS,
+        "timeout": 120,
         "worker_class": "uvicorn.workers.UvicornWorker",
         "post_worker_init": post_worker_init
     }

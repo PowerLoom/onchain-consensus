@@ -14,7 +14,7 @@ from auth.utils.data_models import RateLimitAuthCheck, UserStatusEnum, Snapshott
 from utils.rate_limiter import load_rate_limiter_scripts
 from utils.lru_cache import LRUCache
 from utils.rpc import RpcHelper
-from utils.transaction_utils import write_transaction
+from utils.transaction_utils import write_transaction_with_retry
 from utils.transaction_utils import generate_account_from_uuid
 from helpers.state import get_project_finalized_epoch_cids
 from helpers.state import get_submission_schedule
@@ -159,23 +159,25 @@ async def register_peer_against_project(
             account,
             req_parsed.projectID
         ).estimateGas({'from': settings.anchor_chain_rpc.owner_address})
+        tx_hash = write_transaction_with_retry(
+            settings.anchor_chain_rpc.owner_address,
+            settings.anchor_chain_rpc.owner_private_key,
+            request.app.state.protocol_state_contract,
+            'registerPeer',
+            account,
+            req_parsed.projectID
+            )
+        service_logger.info("Peer Registration transaction sent! Transaction hash: {}", tx_hash)
+
     except Exception as E:
-        return {
-            'info': {
-                'success': False,
-                'response': f'Transaction will most likely fail with error {E}',
+        if "Snapshotter already exists" not in str(E):
+            return {
+                'info': {
+                    'success': False,
+                    'response': f'Transaction will most likely fail with error {E}',
+                }
             }
-        }
     
-    tx_hash = write_transaction(
-        settings.anchor_chain_rpc.owner_address,
-        settings.anchor_chain_rpc.owner_private_key,
-        request.app.state.protocol_state_contract,
-        'registerPeer',
-        account,
-        req_parsed.projectID
-        )
-    service_logger.info("Peer Registration transaction sent! Transaction hash: {}", tx_hash)
     
     await request.app.state.writer_redis_pool.sadd(
         get_project_registered_peers_set_key(req_parsed.projectID),
@@ -213,8 +215,9 @@ async def submit_snapshot(
                 'response': f'Transaction will most likely fail with error {E}',
             }
         }
-
-    tx_hash = write_transaction(
+    
+    try:
+        tx_hash = write_transaction_with_retry(
         settings.anchor_chain_rpc.owner_address,
         settings.anchor_chain_rpc.owner_private_key,
         request.app.state.protocol_state_contract,
@@ -224,9 +227,9 @@ async def submit_snapshot(
         req_parsed.projectID,
         account
         )
+    except Exception as E:
+        logger.error("Snapshot submission transaction failed with error: {}", E)
 
-    service_logger.info("Submit snapshot transaction submitted! Transaction hash: {}", tx_hash)
-    
     cur_ts = int(time.time())
     service_logger.debug('Snapshot for submission: {}', req_parsed)
     # get last accepted epoch?

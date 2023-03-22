@@ -43,8 +43,8 @@ def write_transaction(address, private_key, contract, function, *args):
 	# Get the transaction
 	transaction = func(*args).buildTransaction({
 		"from": address,
-		"gas": 200000,
-		"gasPrice":  w3.eth.gas_price,
+		"gas": 2000000,
+		"gasPrice":  w3.eth.gas_price*2,
 		"nonce": w3.eth.getTransactionCount(address),
 		"chainId": CHAIN_ID,
 	})
@@ -77,8 +77,8 @@ def write_transaction_with_retry(address, private_key, contract, function, *args
 	# Build the transaction
     transaction = func(*args).buildTransaction({
         "from": address,
-        "gas": 200000,
-        "gasPrice":  w3.eth.gas_price,
+        "gas": 2000000,
+        "gasPrice":  w3.eth.gas_price*2,
         "nonce": w3.eth.getTransactionCount(address),
         "chainId": CHAIN_ID,
     })
