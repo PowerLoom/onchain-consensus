@@ -190,6 +190,27 @@ class EpochGenerator:
                         generated_block_counter += 1
                         self._logger.debug('Epoch of sufficient length found: {}', epoch_block)
 
+                        projects = []
+
+                        projectID_pattern = "projectID:*:centralizedConsensus:peers"
+                        async for project_id in self._reader_redis_pool.scan_iter(match=projectID_pattern, count=100):
+                            projects.append(project_id.decode("utf-8").split(":")[1])
+
+                        self._logger.info('Force completing consensus for projects: {}', projects)
+                        for project in projects:
+                            try:
+                                tx_hash = write_transaction_with_retry(
+                                    settings.anchor_chain_rpc.owner_address,
+                                    settings.anchor_chain_rpc.owner_private_key,
+                                    protocol_state_contract,
+                                    'forceCompleteConsensus',
+                                    project,
+                                    epoch[1]-settings.chain.epoch.height,
+                                    )
+                                self._logger.info('Force completing consensus for project: {}, txhash: {}', project, tx_hash)
+                            except Exception as ex:
+                                self._logger.error('Unable to force complete consensus for project: {}, error: {}', project, ex)
+
                         tx_hash = write_transaction_with_retry(
                             settings.anchor_chain_rpc.owner_address,
                             settings.anchor_chain_rpc.owner_private_key,
