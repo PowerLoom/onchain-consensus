@@ -210,16 +210,20 @@ class EpochGenerator:
                                 self._logger.info('Force completing consensus for project: {}, txhash: {}', project, tx_hash)
                             except Exception as ex:
                                 self._logger.error('Unable to force complete consensus for project: {}, error: {}', project, ex)
-
-                        tx_hash = write_transaction_with_retry(
-                            settings.anchor_chain_rpc.owner_address,
-                            settings.anchor_chain_rpc.owner_private_key,
-                            protocol_state_contract,
-                            'releaseEpoch',
-                            epoch_block['begin'],
-                            epoch_block['end'],
-                            )
-                        self._logger.debug('Epoch Released! Transaction hash: {}', tx_hash)
+                        
+                        try:
+                            tx_hash = write_transaction_with_retry(
+                                settings.anchor_chain_rpc.owner_address,
+                                settings.anchor_chain_rpc.owner_private_key,
+                                protocol_state_contract,
+                                'releaseEpoch',
+                                epoch_block['begin'],
+                                epoch_block['end'],
+                                )
+                            self._logger.debug('Epoch Released! Transaction hash: {}', tx_hash)
+                        except Exception as ex:
+                            self._logger.error('Unable to release epoch, error: {}', ex)
+                        
                         await self._writer_redis_pool.set(name=get_epoch_generator_last_epoch(),
                                                           value=epoch_block['end'])
                         await self._writer_redis_pool.zadd(
