@@ -25,7 +25,7 @@ def generate_account_from_uuid(uuid):
     
     return account.address, account.privateKey.hex()
 
-def write_transaction(address, private_key, contract, function, *args):
+def write_transaction(address, private_key, contract, function, nonce, *args):
 	""" Writes a transaction to the blockchain
 
 	Args:
@@ -44,8 +44,8 @@ def write_transaction(address, private_key, contract, function, *args):
 	transaction = func(*args).buildTransaction({
 		"from": address,
 		"gas": 2000000,
-		"gasPrice":  w3.eth.gas_price*2,
-		"nonce": w3.eth.getTransactionCount(address),
+		"gasPrice": w3.toWei('0.0001', 'gwei'),
+		"nonce": nonce,
 		"chainId": CHAIN_ID,
 	})
 	# Sign the transaction
@@ -53,11 +53,9 @@ def write_transaction(address, private_key, contract, function, *args):
 	# Send the transaction
 	tx_hash = w3.eth.send_raw_transaction(signed_transaction.rawTransaction)
 	# Wait for confirmation
-	# w3.eth.wait_for_transaction_receipt(tx_hash)
-
 	return tx_hash.hex()
 
-def write_transaction_with_retry(address, private_key, contract, function, *args):
+def write_transaction_with_receipt(address, private_key, contract, function, nonce, *args):
     """ Writes a transaction using write_transaction, wait for confirmation and retry doubling gas price if failed
 
     Args:
@@ -70,48 +68,8 @@ def write_transaction_with_retry(address, private_key, contract, function, *args
     Returns:
         str: The transaction hash
     """
-    
-    # Create the function
-    func = getattr(contract.functions, function)
-    
-	# Build the transaction
-    transaction = func(*args).buildTransaction({
-        "from": address,
-        "gas": 2000000,
-        "gasPrice":  w3.eth.gas_price*2,
-        "nonce": w3.eth.getTransactionCount(address),
-        "chainId": CHAIN_ID,
-    })
+    tx_hash = write_transaction(address, private_key, contract, function, nonce, *args)
 
-    # Sign the transaction
-    signed = w3.eth.account.sign_transaction(transaction, private_key=private_key)
-    # Send the transaction
-    tx_hash = w3.eth.sendRawTransaction(signed.rawTransaction).hex()
     # Wait for confirmation
-    receipt = w3.eth.waitForTransactionReceipt(tx_hash)
-    
-    # # retry 3 times
-    for i in range(3):
-        if receipt["status"] == 1:
-            break
-        else:
-            # Double the gas price and try again
-            transaction["gasPrice"] = transaction["gasPrice"] * 2
-            signed = w3.eth.account.sign_transaction(transaction, private_key=private_key)
-            tx_hash = w3.eth.sendRawTransaction(signed.rawTransaction).hex()
-            receipt = w3.eth.waitForTransactionReceipt(tx_hash)    
-
-    return tx_hash
-
-# Epoch Release
-# print(write_transaction_with_retry(addr, pkey, contract, 'addEpoch', 1, 2))
-
-# Peer registration
-# project_id = "test"
-# a = "fa311b37-a102-4e37-848d-9cf9f95a7c94"
-# account, apkey = generate_account_from_uuid(a)
-# print(write_transaction_with_retry(addr, pkey, contract, 'registerPeer', account, project_id))
-
-
-# a = "fa311b37-a102-4e37-848d-9cf9f95a7c94"
-# print(generate_account_from_uuid(a))
+    receipt = w3.eth.waitForTransactionReceipt(tx_hash)    
+    return tx_hash, receipt

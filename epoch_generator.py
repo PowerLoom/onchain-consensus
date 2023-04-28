@@ -18,7 +18,7 @@ from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
-from utils.transaction_utils import write_transaction_with_retry
+from utils.transaction_utils import write_transaction
 from web3 import Web3
 
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
@@ -61,9 +61,6 @@ def redis_cleanup(fn):
             self._logger.error('Error while running process: {}', E)
         finally:
             self._logger.debug('Shutting down')
-            if not self._simulation_mode:
-                sys.exit(0)
-
     return wrapper
 
 
@@ -76,21 +73,14 @@ class EpochGenerator:
         self.name = name
         setproctitle(self.name)
         self._logger = logger.bind(module=self.name)
-        self._simulation_mode = simulation_mode
         self._shutdown_initiated = False
         self.last_sent_block = 0
         self._end = None
+        self.nonce = w3.eth.getTransactionCount(settings.anchor_chain_rpc.owner_address)
+        self.epochId = 1
 
     async def setup(self, **kwargs):
-        if self._simulation_mode:
-            self._logger.debug('Simulation mode is on')
-            if settings.test_redis:
-                self._aioredis_pool = RedisPool(writer_redis_conf=settings.test_redis)
-            else:
-                self._logger.error('Test Redis not configured')
-                sys.exit(0)
-        else:
-            self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
+        self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
@@ -109,30 +99,18 @@ class EpochGenerator:
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
-        last_block_data_redis = await self._writer_redis_pool.get(name=get_epoch_generator_last_epoch())
-        if last_block_data_redis:
-            # Can't provide begin block which previous state is present in redis
-            if begin_block_epoch != 0:
-                self._logger.debug(
-                    'Last epoch block found in Redis: {} and begin block is given as {}',
-                    last_block_data_redis.decode("utf-8"), begin_block_epoch
-                )
-                self._logger.debug(
-                    'Using redis last epoch block as begin block and ignoring begin block given as {}',
-                    begin_block_epoch
-                )
-            else:
-                self._logger.debug('Begin block not given, attempting starting from Redis')
-
-            begin_block_epoch = int(last_block_data_redis.decode("utf-8")) + 1
-            self._logger.debug(f'Found last epoch block : {begin_block_epoch} in Redis. Starting from checkpoint.')
+        last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
+        if last_epoch_data[1]:
+            self._logger.debug('Found last epoch block : {} in contract. Starting from checkpoint.', last_epoch_data[1])
+            begin_block_epoch = last_epoch_data[1] + 1
+            self.epochId = last_epoch_data[2]
+        else:
+            self._logger.debug('No last epoch block found in contract. Starting from configured block in settings.')
 
         end_block_epoch = self._end
         # Sleep only 1 second to speed up simulation
-        if self._simulation_mode:
-            sleep_secs_between_chunks = 1
-        else:
-            sleep_secs_between_chunks = 60
+        sleep_secs_between_chunks = 60
+        
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
         for node in settings.chain.rpc.nodes:
@@ -142,9 +120,8 @@ class EpochGenerator:
             NODES=rpc_urls,
             RETRY_LIMIT=settings.chain.rpc.retry
         )
-        generated_block_counter = 0
         self._logger.debug('Starting {}', Process.name)
-        while True if not self._simulation_mode else generated_block_counter < 10:
+        while True:
             try:
                 cur_block = rpc_obj.rpc_eth_blocknumber(rpc_nodes=rpc_nodes_obj)
             except Exception as ex:
@@ -187,39 +164,39 @@ class EpochGenerator:
                             begin_block_epoch = epoch[0]
                             break
                         epoch_block = {'begin': epoch[0], 'end': epoch[1]}
-                        generated_block_counter += 1
                         self._logger.debug('Epoch of sufficient length found: {}', epoch_block)
 
-                        projects = []
-
-                        projectID_pattern = "projectID:*:centralizedConsensus:peers"
-                        async for project_id in self._reader_redis_pool.scan_iter(match=projectID_pattern, count=100):
-                            projects.append(project_id.decode("utf-8").split(":")[1])
+                        projects = protocol_state_contract.functions.getProjects().call()
 
                         self._logger.info('Force completing consensus for projects: {}', projects)
                         for project in projects:
                             try:
-                                tx_hash = write_transaction_with_retry(
+                                tx_hash = write_transaction(
                                     settings.anchor_chain_rpc.owner_address,
                                     settings.anchor_chain_rpc.owner_private_key,
                                     protocol_state_contract,
-                                    'forceCompleteConsensus',
+                                    'forceCompleteConsensusSnapshot',
+                                    self.nonce,
                                     project,
-                                    epoch[1]-settings.chain.epoch.height,
+                                    self.epochId
                                     )
+                                self.nonce += 1 
                                 self._logger.info('Force completing consensus for project: {}, txhash: {}', project, tx_hash)
                             except Exception as ex:
                                 self._logger.error('Unable to force complete consensus for project: {}, error: {}', project, ex)
                         
                         try:
-                            tx_hash = write_transaction_with_retry(
+                            tx_hash = write_transaction(
                                 settings.anchor_chain_rpc.owner_address,
                                 settings.anchor_chain_rpc.owner_private_key,
                                 protocol_state_contract,
                                 'releaseEpoch',
+                                self.nonce,
                                 epoch_block['begin'],
                                 epoch_block['end'],
                                 )
+                            self.nonce += 1
+                            self.epochId += 1
                             self._logger.debug('Epoch Released! Transaction hash: {}', tx_hash)
                         except Exception as ex:
                             self._logger.error('Unable to release epoch, error: {}', ex)
@@ -231,9 +208,6 @@ class EpochGenerator:
                             mapping={json.dumps({"begin": epoch_block['begin'], "end": epoch_block['end']}): int(
                                 time.time())}
                         )
-
-                        if self._simulation_mode and generated_block_counter >= 10:
-                            break
 
                         epoch_generator_history_len = await self._writer_redis_pool.zcard(
                             get_epoch_generator_epoch_history())
