@@ -1,4 +1,3 @@
-from mnemonic import Mnemonic
 from web3 import Web3
 
 from settings.conf import settings
@@ -6,26 +5,7 @@ from settings.conf import settings
 
 w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
 
-mnemonic = Mnemonic('english')
 CHAIN_ID = settings.anchor_chain_rpc.chain_id
-
-
-def generate_account_from_uuid(uuid):
-    """Generates a private key and address from a uuid
-
-    Args:
-        uuid (str): The uuid to generate the account from
-
-    Returns:
-        tuple: A tuple containing the address and private key
-    """
-
-    # Just a precaution to make sure the uuid is in the correct format
-    uuid = ''.join(uuid.split('-')).lower()
-    mnemonic.to_seed(uuid)
-    account = w3.eth.account.privateKeyToAccount(mnemonic.to_seed(uuid)[:32])
-
-    return account.address, account.privateKey.hex()
 
 
 def write_transaction(address, private_key, contract, function, nonce, *args):
