@@ -28,16 +28,16 @@ from web3.eth import AsyncEth
 from web3.types import TxParams
 from web3.types import Wei
 
-from settings.conf import settings
-from utils.default_logger import logger
-from utils.exceptions import RPCException
 from data_models import AnchorRPCConfig
-from utils.rate_limiter import check_rpc_rate_limit
-from utils.rate_limiter import load_rate_limiter_scripts
 from helpers.redis_keys import rpc_blocknumber_calls
 from helpers.redis_keys import rpc_get_event_logs_calls
 from helpers.redis_keys import rpc_json_rpc_calls
 from helpers.redis_keys import rpc_web3_calls
+from settings.conf import settings
+from utils.default_logger import logger
+from utils.exceptions import RPCException
+from utils.rate_limiter import check_rpc_rate_limit
+from utils.rate_limiter import load_rate_limiter_scripts
 from utils.rpc_cache import LruCacheRpc
 
 
@@ -201,7 +201,9 @@ class RpcHelper(object):
         return self._nodes[self._current_node_index]
 
     def _on_node_exception(self, retry_state):
-        self._current_node_index = (self._current_node_index + 1) % self._node_count
+        self._current_node_index = (
+            self._current_node_index + 1
+        ) % self._node_count
         self._logger.warning(
             (
                 'Found exception injected next full_node | exception:'
@@ -461,7 +463,9 @@ class RpcHelper(object):
         from_block,
         to_block,
         params: Union[List, None] = None,
-        from_address=Web3.toChecksumAddress('0x0000000000000000000000000000000000000000'),
+        from_address=Web3.toChecksumAddress(
+            '0x0000000000000000000000000000000000000000',
+        ),
     ):
         """
         Batch call "single-function" on a contract for given block-range
@@ -500,7 +504,9 @@ class RpcHelper(object):
         response_data = await self._make_rpc_jsonrpc_call(rpc_query, redis_conn=redis_conn)
         rpc_response = []
 
-        response = response_data if isinstance(response_data, list) else [response_data]
+        response = response_data if isinstance(
+            response_data, list,
+        ) else [response_data]
         for result in response:
             rpc_response.append(
                 eth_abi.decode_abi(
@@ -622,7 +628,9 @@ class RpcHelper(object):
                     underlying_exception=e,
                     extra_info=f'RPC_GET_EVENT_LOGS_ERROR: {str(e)}',
                 )
-                self._logger.trace('Error in get_events_logs, error {}', str(exc))
+                self._logger.trace(
+                    'Error in get_events_logs, error {}', str(exc),
+                )
                 raise exc
 
         return await f()

@@ -1,7 +1,10 @@
 import time
-from pydantic import BaseModel
-from typing import Union, List, Optional
 from enum import Enum
+from typing import List
+from typing import Optional
+from typing import Union
+
+from pydantic import BaseModel
 
 
 class RedisConfig(BaseModel):
@@ -97,9 +100,11 @@ class RPCConfig(BaseModel):
     retry: int
     request_timeout: int
 
+
 class RPCNodeConfig(BaseModel):
     url: str
     rate_limit: str
+
 
 class AnchorRPCConfig(BaseModel):
     full_nodes: List[RPCNodeConfig]
@@ -130,8 +135,10 @@ class ChainConfig(BaseModel):
     chain_id: int
     epoch: EpochConfig
 
+
 class RLimit(BaseModel):
     file_descriptors: int
+
 
 class SettingsConf(BaseModel):
     consensus_service: ConsensusService

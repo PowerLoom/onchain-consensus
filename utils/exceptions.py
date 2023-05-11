@@ -1,5 +1,6 @@
 import json
 
+
 class RPCException(Exception):
     def __init__(self, request, response, underlying_exception, extra_info):
         self.request = request

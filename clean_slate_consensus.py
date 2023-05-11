@@ -1,13 +1,16 @@
 import asyncio
 import logging
-from utils.redis_conn import RedisPool
+
 from settings.conf import settings
+from utils.redis_conn import RedisPool
 
 # Set up logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
@@ -22,16 +25,16 @@ async def cleanup_redis_state():
     writer_redis_pool = redis_pool.writer_redis_pool
 
     # Set the pattern for matching keys
-    pattern = "*:centralizedConsensus:*"
-    except_pattern = b":peers"
-    cursor = "0"
+    pattern = '*:centralizedConsensus:*'
+    except_pattern = b':peers'
+    cursor = '0'
     while cursor != 0:
         cursor, keys = await writer_redis_pool.scan(cursor=cursor, match=pattern, count=1000)
         for key in keys:
             if not key.endswith(except_pattern):
                 await writer_redis_pool.delete(key)
-                logger.info("Deleted key: %s", key)
-    logger.info("Cleaning process complete.")
+                logger.info('Deleted key: %s', key)
+    logger.info('Cleaning process complete.')
 
 if __name__ == '__main__':
     # Run the cleanup function in an asyncio event loop

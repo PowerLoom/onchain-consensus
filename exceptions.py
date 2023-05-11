@@ -1,4 +1,5 @@
-class SelfExitException(Exception):  # used by process hub core to signal core exit
+# used by process hub core to signal core exit
+class SelfExitException(Exception):
     pass
 
 

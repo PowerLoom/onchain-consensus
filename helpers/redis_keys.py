@@ -24,11 +24,11 @@ def get_project_epoch_specific_accepted_peers_key(project_id, epoch_end):
 
 
 def get_epoch_generator_last_epoch():
-    return "epochGenerator:lastEpoch"
+    return 'epochGenerator:lastEpoch'
 
 
 def get_epoch_generator_epoch_history():
-    return "epochGenerator:epochHistory"
+    return 'epochGenerator:epochHistory'
 
 
 def get_snapshotter_issues_reported_key(snapshotter_id):
@@ -48,6 +48,7 @@ def get_snapshotter_info_allowed_snapshotters_key():
 # HTABLE mapping snapshotter UUID -> snapshotter alias
 def get_snapshotter_info_snapshotter_mapping_key():
     return 'snapshotterInfo:snapshotterMapping'
+
 
 rpc_json_rpc_calls = (
     'rpc:jsonRpc:calls'
