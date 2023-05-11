@@ -29,6 +29,11 @@ class SnapshotBase(PeerUUIDIncludedRequests):
     projectID: str
 
 
+class EpochStatusRequest(PeerUUIDIncludedRequests):
+    projectID: str
+    epochs: List[EpochBase]
+
+
 class SnapshotSubmission(SnapshotBase):
     snapshotCID: str
 
