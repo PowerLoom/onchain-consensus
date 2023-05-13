@@ -18,14 +18,12 @@ from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
 
 from auth.utils.data_models import RateLimitAuthCheck
-from auth.utils.data_models import SnapshotterMetadata
 from auth.utils.data_models import UserStatusEnum
 from auth.utils.helpers import inject_rate_limit_fail_response
 from auth.utils.helpers import rate_limit_auth_check
 from data_models import Message
-from data_models import SnapshotterAliasIssue
 from data_models import SnapshotterIssue
-from helpers.redis_keys import *
+from helpers.redis_keys import get_snapshotter_issues_reported_key
 from settings.conf import settings
 from utils.default_logger import logger
 from utils.rate_limiter import load_rate_limiter_scripts
@@ -130,6 +128,8 @@ async def report_issue(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
 
+    # TODO: Basic ip based check for now, do a snapshotter ID check by getting snapshotters from contract if necessary
+
     # Updating time of reporting to avoid manual incorrect time manipulation
     req_parsed.timeOfReporting = int(time.time())
     await request.app.state.writer_redis_pool.zadd(
@@ -152,11 +152,11 @@ async def report_issue(
 
 @app.get(
     '/metrics/{snapshotter_alias}/issues',
-    response_model=List[SnapshotterAliasIssue],
+    response_model=List[SnapshotterIssue],
     responses={404: {'model': Message}},
 )
 async def get_snapshotter_issues(
-        snapshotter_alias: str,
+        snapshotter_id: str,
         request: Request,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(
@@ -170,19 +170,11 @@ async def get_snapshotter_issues(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
-    snapshotter_details = await redis_conn.get(get_snapshotter_info_key(snapshotter_alias))
-    if not snapshotter_details:
-        response.status_code = 404
-        return dict()
-    else:
-        snapshotter_data = SnapshotterMetadata.parse_raw(snapshotter_details)
+
     issues = await redis_conn.zrevrange(
-        get_snapshotter_issues_reported_key(snapshotter_data.uuid), 0, -1, withscores=False,
+        get_snapshotter_issues_reported_key(snapshotter_id), 0, -1, withscores=False,
     )
     issues_reports = []
     for issue in issues:
-        _: dict = json.loads(issue)
-        _['alias'] = snapshotter_alias
-        _.pop('instanceID')
-        issues_reports.append(SnapshotterAliasIssue(**_))
+        issues_reports.append(SnapshotterIssue(**json.loads(issue)))
     return issues_reports

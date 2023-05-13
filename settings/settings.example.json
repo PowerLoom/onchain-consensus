@@ -7,21 +7,11 @@
 		"keepalive_secs": 600,
 		"gunicorn_workers": 20
 	},
-	"consensus_criteria":{
-        "min_snapshotter_count": 1,
-        "percentage": 66
-    },
 	"rate_limit": "100000/day;200/minute;20/second",
 	"redis": {
 		"host": "redis",
 		"port": 6379,
 		"db": 0,
-		"password": null
-	},
-	"test_redis": {
-		"host": "redis",
-		"port": 6379,
-		"db": 1,
 		"password": null
 	},
 	"chain":{

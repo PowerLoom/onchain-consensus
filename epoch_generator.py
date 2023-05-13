@@ -1,6 +1,5 @@
 import asyncio
 import json
-import sys
 import threading
 import time
 from functools import wraps
@@ -89,13 +88,12 @@ class EpochGenerator:
         )
         self.epochId = 1
 
-    async def setup(self, **kwargs):
+    async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
         self.redis_thread: threading.Thread
-        self._end = kwargs.get('end')
 
     def _generic_exit_handler(self, signum, sigframe):
         if signum in [SIGINT, SIGTERM, SIGQUIT] and not self._shutdown_initiated:
@@ -103,8 +101,8 @@ class EpochGenerator:
             raise GenericExitOnSignal
 
     @redis_cleanup
-    async def run(self, **kwargs):
-        await self.setup(**kwargs)
+    async def run(self):
+        await self.setup()
 
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
@@ -123,8 +121,6 @@ class EpochGenerator:
                 'No last epoch block found in contract. Starting from configured block in settings.',
             )
 
-        end_block_epoch = self._end
-        # Sleep only 1 second to speed up simulation
         sleep_secs_between_chunks = 60
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
@@ -278,19 +274,11 @@ class EpochGenerator:
                         begin_block_epoch = end_block_epoch + 1
 
 
-def main(simulation_mode, **kwargs):
+def main():
     """Spin up the ticker process in event loop"""
-    ticker_process = EpochGenerator(simulation_mode=simulation_mode)
-    print('Set sim mode: ', simulation_mode)
-    asyncio.get_event_loop().run_until_complete(ticker_process.run(**kwargs))
+    ticker_process = EpochGenerator()
+    asyncio.get_event_loop().run_until_complete(ticker_process.run())
 
 
 if __name__ == '__main__':
-    args = sys.argv
-    kwargs_dict = dict()
-    if len(args) > 1:
-        end_block = int(args[1])
-        kwargs_dict['end'] = end_block
-        main(simulation_mode=False, **kwargs_dict)
-    else:
-        main(simulation_mode=False)
+    main()
