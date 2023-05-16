@@ -1,5 +1,6 @@
 import time
 from enum import Enum
+from typing import Dict
 from typing import List
 from typing import Optional
 
@@ -103,24 +104,13 @@ class Message(BaseModel):
     message: str
 
 
-class SnapshotterIssueSeverity(str, Enum):
-    high = 'HIGH'
-    medium = 'MEDIUM'
-    low = 'LOW'
-    cleared = 'CLEARED'
-
-
 class SnapshotterIssue(BaseModel):
     instanceID: str
-    namespace: Optional[str]
-    severity: SnapshotterIssueSeverity
     issueType: str
     projectID: str
-    serviceName: str
-    epochs: Optional[List[int]]
-    extra: Optional[dict]
-    timeOfReporting: Optional[int]
-    noOfEpochsBehind: Optional[int]
+    epochId: int
+    timeOfReporting: int
+    extra: Optional[Dict] = dict()
 
 
 class UserStatusEnum(str, Enum):
