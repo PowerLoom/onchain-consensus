@@ -100,13 +100,7 @@ class EpochGenerator:
             self._shutdown_initiated = True
             raise GenericExitOnSignal
 
-    @redis_cleanup
-    async def run(self):
-        await self.setup()
-
-        begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
-        for signame in [SIGINT, SIGTERM, SIGQUIT]:
-            signal(signame, self._generic_exit_handler)
+    def _fetch_epoch_from_contract(self) -> int:
         last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
         if last_epoch_data[1]:
             self._logger.debug(
@@ -116,10 +110,25 @@ class EpochGenerator:
             )
             begin_block_epoch = last_epoch_data[1] + 1
             self.epochId = last_epoch_data[2]
+            return begin_block_epoch
         else:
             self._logger.debug(
                 'No last epoch block found in contract. Starting from configured block in settings.',
             )
+            return -1
+
+
+    @redis_cleanup
+    async def run(self):
+        await self.setup()
+
+        begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
+        for signame in [SIGINT, SIGTERM, SIGQUIT]:
+            signal(signame, self._generic_exit_handler)
+        
+        last_contract_epoch = self._fetch_epoch_from_contract()
+        if last_contract_epoch != -1:
+            begin_block_epoch = last_contract_epoch
 
         sleep_secs_between_chunks = 60
 
@@ -218,6 +227,16 @@ class EpochGenerator:
                                 self._logger.error(
                                     'Unable to force complete consensus for project: {}, error: {}', project, ex,
                                 )
+                                # sleep for 60 seconds to avoid nonce collision
+                                time.sleep(60)
+                                # reset nonce
+                                self.nonce = w3.eth.getTransactionCount(
+                                    settings.anchor_chain_rpc.owner_address,
+                                )
+
+                                last_contract_epoch = self._fetch_epoch_from_contract()
+                                if last_contract_epoch != -1:
+                                    begin_block_epoch = last_contract_epoch
 
                         try:
                             tx_hash = write_transaction(
@@ -238,6 +257,16 @@ class EpochGenerator:
                             self._logger.error(
                                 'Unable to release epoch, error: {}', ex,
                             )
+                            # sleep for 60 seconds to avoid nonce collision
+                            time.sleep(60)
+                            # reset nonce
+                            self.nonce = w3.eth.getTransactionCount(
+                                settings.anchor_chain_rpc.owner_address,
+                            )
+
+                            last_contract_epoch = self._fetch_epoch_from_contract()
+                            if last_contract_epoch != -1:
+                                begin_block_epoch = last_contract_epoch
 
                         await self._writer_redis_pool.set(
                             name=get_epoch_generator_last_epoch(),
