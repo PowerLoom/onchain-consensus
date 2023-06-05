@@ -1,14 +1,18 @@
 import asyncio
 import logging
-from utils.redis_conn import RedisPool
-from helpers.redis_keys import get_epoch_generator_last_epoch, get_epoch_generator_epoch_history
+
+from helpers.redis_keys import get_epoch_generator_epoch_history
+from helpers.redis_keys import get_epoch_generator_last_epoch
 from settings.conf import settings
+from utils.redis_conn import RedisPool
 
 # Set up logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
@@ -23,9 +27,9 @@ async def cleanup_redis_state():
 
     # Delete the keys used by the code
     await writer_redis_pool.delete(get_epoch_generator_last_epoch())
-    logger.info("Deleted key: %s", get_epoch_generator_last_epoch())
+    logger.info('Deleted key: %s', get_epoch_generator_last_epoch())
     await writer_redis_pool.delete(get_epoch_generator_epoch_history())
-    logger.info("Deleted key: %s", get_epoch_generator_epoch_history())
+    logger.info('Deleted key: %s', get_epoch_generator_epoch_history())
 
 
 if __name__ == '__main__':

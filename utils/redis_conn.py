@@ -1,17 +1,21 @@
-from functools import wraps
-from settings.conf import settings as settings_conf
-from typing import Optional
-from redis import asyncio as aioredis
-from data_models import RedisConfig
-import redis
 import contextlib
-import redis.exceptions as redis_exc
 import logging
 import sys
+from functools import wraps
+from typing import Optional
+
+import redis
+import redis.exceptions as redis_exc
+from redis import asyncio as aioredis
+
+from data_models import RedisConfig
+from settings.conf import settings as settings_conf
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.DEBUG)
-formatter = logging.Formatter(u"%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s")
+formatter = logging.Formatter(
+    u'%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s',
+)
 
 stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setLevel(logging.DEBUG)
@@ -26,7 +30,7 @@ logger.addHandler(stderr_handler)
 
 
 def inject_retry_exception_conf(redis_conf: dict):
-    redis_conf.update({"retry_on_error": [redis.exceptions.ReadOnlyError, ]})
+    redis_conf.update({'retry_on_error': [redis.exceptions.ReadOnlyError]})
 
 
 REDIS_CONN_CONF = settings_conf.redis.dict()
@@ -63,7 +67,9 @@ def provide_redis_conn(fn):
     def wrapper(*args, **kwargs):
         arg_conn = 'redis_conn'
         func_params = fn.__code__.co_varnames
-        conn_in_args = arg_conn in func_params and func_params.index(arg_conn) < len(args)
+        conn_in_args = arg_conn in func_params and func_params.index(
+            arg_conn,
+        ) < len(args)
         conn_in_kwargs = arg_conn in kwargs
         if conn_in_args or conn_in_kwargs:
             # logging.debug('Found redis_conn populated already in %s', fn.__name__)
@@ -71,11 +77,15 @@ def provide_redis_conn(fn):
         else:
             # logging.debug('Found redis_conn not populated in %s', fn.__name__)
             inject_retry_exception_conf(redis_conf=REDIS_CONN_CONF)
-            connection_pool = redis.BlockingConnectionPool(**REDIS_CONN_CONF, max_connections=20)
+            connection_pool = redis.BlockingConnectionPool(
+                **REDIS_CONN_CONF, max_connections=20,
+            )
             # logging.debug('Created Redis connection Pool')
             with get_redis_conn_from_pool(connection_pool) as redis_obj:
                 kwargs[arg_conn] = redis_obj
-                logging.debug('Returning after populating redis connection object')
+                logging.debug(
+                    'Returning after populating redis connection object',
+                )
                 return fn(*args, **kwargs)
 
     return wrapper
@@ -85,7 +95,7 @@ async def get_redis_pool(redis_settings: RedisConfig = settings_conf.redis, pool
     return await aioredis.from_url(
         url=construct_redis_url(redis_settings),
         max_connections=pool_size,
-        retry_on_error=[redis.exceptions.ReadOnlyError, ]
+        retry_on_error=[redis.exceptions.ReadOnlyError],
     )
 
 
@@ -96,8 +106,8 @@ async def get_writer_redis_conn():
         port=REDIS_WRITER_CONN_CONF['port'],
         db=REDIS_WRITER_CONN_CONF['db'],
         password=REDIS_WRITER_CONN_CONF['password'],
-        retry_on_error=[redis.exceptions.ReadOnlyError, ],
-        single_connection_client=True
+        retry_on_error=[redis.exceptions.ReadOnlyError],
+        single_connection_client=True,
     )
     return out
 
@@ -110,8 +120,8 @@ async def get_reader_redis_conn():
         port=REDIS_READER_CONN_CONF['port'],
         db=REDIS_READER_CONN_CONF['db'],
         password=REDIS_READER_CONN_CONF['password'],
-        retry_on_error=[redis.exceptions.ReadOnlyError, ],
-        single_connection_client=True
+        retry_on_error=[redis.exceptions.ReadOnlyError],
+        single_connection_client=True,
     )
     return out
 
@@ -125,7 +135,7 @@ class RedisPool:
             writer_redis_conf: RedisConfig = settings_conf.redis,
             reader_redis_conf: Optional[RedisConfig] = settings_conf.redis,
             pool_size=200,
-            replication_mode=True
+            replication_mode=True,
     ):
         self._writer_redis_conf = writer_redis_conf
         self._reader_redis_conf = reader_redis_conf

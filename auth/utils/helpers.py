@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 from datetime import timedelta
+from json.decoder import JSONDecodeError
 
 import pydantic
 from async_limits import parse_many
@@ -8,22 +9,22 @@ from fastapi import Depends
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
-from json.decoder import JSONDecodeError
 
 from auth.utils.data_models import AuthCheck
 from auth.utils.data_models import RateLimitAuthCheck
 from auth.utils.data_models import UserStatusEnum
-from auth.utils.redis_keys import user_details_htable
-from data_models import PeerUUIDIncludedRequests, SnapshotterMetadata
+from data_models import SnapshotterMetadata
 from helpers import redis_keys
 from settings.conf import settings as consensus_settings
 from utils.rate_limiter import generic_rate_limiter
+
 
 def incr_success_calls_count(
         request: Request,
         rate_limit_auth_dep: RateLimitAuthCheck,
 ):
     request.app.state.auth[rate_limit_auth_dep.owner.alias].callsCount += 1
+
 
 def incr_throttled_calls_count(
         request: Request,
@@ -63,89 +64,50 @@ def inject_rate_limit_fail_response(rate_limit_auth_check_dependency: RateLimitA
     return JSONResponse(content=response_body, status_code=response_status, headers=response_headers)
 
 
-# TODO: cacheize user active statuses to avoid redis calls on every auth check
 async def auth_check(
         request: Request,
 ) -> AuthCheck:
     auth_redis_conn: aioredis.Redis = request.app.state.writer_redis_pool
-    try:
-        uuid_included_request_body = PeerUUIDIncludedRequests.parse_obj(await request.json())
-    except (pydantic.ValidationError, JSONDecodeError):
-        uuid_included_request_body = False
-
-    if not uuid_included_request_body:
-        # public access. create owner based on IP address
-        if 'CF-Connecting-IP' in request.headers:
-            user_ip = request.headers['CF-Connecting-IP']
-        elif 'X-Forwarded-For' in request.headers:
-            proxy_data = request.headers['X-Forwarded-For']
-            ip_list = proxy_data.split(',')
-            user_ip = ip_list[0]  # first address in list is User IP
-        else:
-            user_ip = request.client.host  # For local development
-        
-        # If user is not in cache, get from redis and add to cache
-        if user_ip not in request.app.state.auth:
-            ip_user_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(alias=user_ip))
-            # if user is not in redis, create a new one
-            if not ip_user_dets_b:
-                public_owner = SnapshotterMetadata(
-                    alias=user_ip,
-                    name=user_ip,
-                    email=user_ip,
-                    rate_limit=consensus_settings.rate_limit,
-                    active=UserStatusEnum.active,
-                    callsCount=0,
-                    throttledCount=0,
-                    next_reset_at=int(time.time()) + 86400,
-                )
-                await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=user_ip), public_owner.json())
-            else:
-                public_owner = SnapshotterMetadata.parse_raw(ip_user_dets_b)
-
-            request.app.state.auth[user_ip] = public_owner
-
-        else:
-            public_owner = request.app.state.auth[user_ip]
-        
-        return AuthCheck(
-            authorized=public_owner.active == UserStatusEnum.active,
-            api_key='public',
-            reason='',
-            owner=public_owner
-        )
+    # public access. create owner based on IP address
+    if 'CF-Connecting-IP' in request.headers:
+        user_ip = request.headers['CF-Connecting-IP']
+    elif 'X-Forwarded-For' in request.headers:
+        proxy_data = request.headers['X-Forwarded-For']
+        ip_list = proxy_data.split(',')
+        user_ip = ip_list[0]  # first address in list is User IP
     else:
-        uuid_in_request = uuid_included_request_body.instanceID
-        # this will fail if snapshotter is deactivated, therefore safe to cache snapshotter_details
-        uuid_found = await auth_redis_conn.sismember(
-            redis_keys.get_snapshotter_info_allowed_snapshotters_key(), uuid_in_request
-        )
-        if not uuid_found:
-            return AuthCheck(
-                authorized=uuid_found,
-                api_key='dummy' if not uuid_found else uuid_in_request,
-                reason='illegal peer/instance ID supplied' if not uuid_found else ''
+        user_ip = request.client.host  # For local development
+
+    # If user is not in cache, get from redis and add to cache
+    if user_ip not in request.app.state.auth:
+        ip_user_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(alias=user_ip))
+        # if user is not in redis, create a new one
+        if not ip_user_dets_b:
+            public_owner = SnapshotterMetadata(
+                alias=user_ip,
+                name=user_ip,
+                email=user_ip,
+                rate_limit=consensus_settings.rate_limit,
+                active=UserStatusEnum.active,
+                callsCount=0,
+                throttledCount=0,
+                next_reset_at=int(time.time()) + 86400,
             )
+            await auth_redis_conn.set(redis_keys.get_snapshotter_info_key(alias=user_ip), public_owner.json())
         else:
-            if uuid_in_request in request.app.state.snapshotter_aliases:
-                snapshotter_details = request.app.state.snapshotter_aliases[uuid_in_request]
-            else:
-                snapshotter_alias = await auth_redis_conn.hget(
-                    redis_keys.get_snapshotter_info_snapshotter_mapping_key(),
-                    uuid_in_request
-                )
-                snapshotter_dets_b = await auth_redis_conn.get(redis_keys.get_snapshotter_info_key(
-                    alias=snapshotter_alias.decode('utf-8'))
-                )
-                snapshotter_details = SnapshotterMetadata.parse_raw(snapshotter_dets_b)
-                request.app.state.snapshotter_aliases[uuid_in_request] = snapshotter_details
-                request.app.state.auth[snapshotter_details.alias] = snapshotter_details
-            
-            return AuthCheck(
-                authorized=snapshotter_details.active == UserStatusEnum.active,
-                api_key=uuid_in_request,
-                owner=snapshotter_details
-            )
+            public_owner = SnapshotterMetadata.parse_raw(ip_user_dets_b)
+
+        request.app.state.auth[user_ip] = public_owner
+
+    else:
+        public_owner = request.app.state.auth[user_ip]
+
+    return AuthCheck(
+        authorized=public_owner.active == UserStatusEnum.active,
+        api_key='public',
+        reason='',
+        owner=public_owner,
+    )
 
 
 async def rate_limit_auth_check(
@@ -161,7 +123,7 @@ async def rate_limit_auth_check(
                     auth_check_dep.api_key,
                 ],
                 redis_conn=auth_redis_conn,
-                rate_limit_lua_script_shas=request.app.state.rate_limit_lua_script_shas
+                rate_limit_lua_script_shas=request.app.state.rate_limit_lua_script_shas,
             )
         except:
             auth_check_dep.authorized = False

@@ -7,6 +7,8 @@ from async_limits.storage import AsyncRedisStorage
 from async_limits.strategies import AsyncFixedWindowRateLimiter
 from redis import asyncio as aioredis
 
+from utils.exceptions import RPCException
+
 
 # Initialize rate limits when program starts
 LUA_SCRIPT_SHAS = None
@@ -93,3 +95,48 @@ async def generic_rate_limiter(
     return True, 0, ''
 
 
+async def check_rpc_rate_limit(
+    parsed_limits: list,
+    app_id,
+    redis_conn: aioredis.Redis,
+    request_payload,
+    error_msg,
+    logger,
+    rate_limit_lua_script_shas=None,
+    limit_incr_by=1,
+):
+    """
+    rate limiter for rpc calls
+    """
+    key_bits = [
+        app_id,
+        'eth_call',
+    ]  # TODO: add unique elements that can identify a request
+    try:
+        can_request, retry_after, violated_limit = await generic_rate_limiter(
+            parsed_limits,
+            key_bits,
+            redis_conn,
+            rate_limit_lua_script_shas,
+            limit_incr_by,
+        )
+    except Exception as exc:
+        logger.opt(exception=True).error(
+            (
+                'Caught exception on rate limiter operations: {} | Bypassing'
+                ' rate limit check '
+            ),
+            exc,
+        )
+        raise
+
+    if not can_request:
+        exc = RPCException(
+            request=request_payload,
+            response={},
+            underlying_exception=None,
+            extra_info=error_msg,
+        )
+        logger.trace('Rate limit hit, raising exception {}', str(exc))
+        raise exc
+    return can_request

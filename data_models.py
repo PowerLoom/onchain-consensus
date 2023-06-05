@@ -1,7 +1,9 @@
 import time
-from pydantic import BaseModel
-from typing import Union, List, Optional
 from enum import Enum
+from typing import List
+from typing import Optional
+
+from pydantic import BaseModel
 
 
 class RedisConfig(BaseModel):
@@ -29,62 +31,12 @@ class SnapshotBase(PeerUUIDIncludedRequests):
     projectID: str
 
 
-class EpochStatusRequest(PeerUUIDIncludedRequests):
-    projectID: str
-    epochs: List[EpochBase]
-
-
-class SnapshotSubmission(SnapshotBase):
-    snapshotCID: str
-
-
-class SubmissionSchedule(BaseModel):
-    begin: int
-    end: int
-
-
-class SubmissionDataStoreEntry(BaseModel):
-    snapshotCID: str
-    submittedTS: int
-
-
-class SubmissionAcceptanceStatus(str, Enum):
-    accepted = 'ACCEPTED'
-    finalized = 'FINALIZED'
-    # if the peer never submitted yet comes around checking for status, trying to work around the system
-    notsubmitted = 'NOTSUBMITTED'
-    # if all peers have submitted their snapshots and 2/3 consensus has not been reached
-    # if submission deadline has passed, all peers have not submitted and 2/3 not reached
-    indeterminate = 'INDETERMINATE'
-
-
-class SubmissionStatus(str, Enum):
-    within_schedule = 'WITHIN_SCHEDULE'
-    delayed = 'DELAYED'
-
-
-class EpochConsensusStatus(str, Enum):
-    consensus_achieved = 'CONSENSUS_ACHIEVED'
-    no_consensus = 'NO_CONSENSUS'
-
-
-class EpochStatus(str, Enum):
-    in_progress = 'IN_PROGRESS'
-    finalized = 'FINALIZED'
-
-
-class SubmissionResponse(BaseModel):
-    status: Union[SubmissionAcceptanceStatus, EpochConsensusStatus]
-    delayedSubmission: bool
-    finalizedSnapshotCID: Optional[str] = None
-
-
 class ConsensusService(BaseModel):
-    submission_window: int
     host: str
     port: str
     keepalive_secs: int
     keys_ttl: int = 86400
+    gunicorn_workers: int = 20
 
 
 class NodeConfig(BaseModel):
@@ -97,6 +49,23 @@ class RPCConfig(BaseModel):
     request_timeout: int
 
 
+class RPCNodeConfig(BaseModel):
+    url: str
+    rate_limit: str
+
+
+class AnchorRPCConfig(BaseModel):
+    full_nodes: List[RPCNodeConfig]
+    archive_nodes: Optional[List[RPCNodeConfig]]
+    force_archive_blocks: Optional[int]
+    retry: int
+    chain_id: int
+    protocol_state_address: str
+    validator_address: str
+    validator_private_key: str
+    request_time_out: int
+
+
 class EpochConfig(BaseModel):
     height: int
     head_offset: int
@@ -104,34 +73,24 @@ class EpochConfig(BaseModel):
     history_length: int
 
 
-class ConsensusCriteria(BaseModel):
-    min_snapshotter_count: int
-    percentage: int
-
-
 class ChainConfig(BaseModel):
     rpc: RPCConfig
     chain_id: int
     epoch: EpochConfig
 
+
 class RLimit(BaseModel):
     file_descriptors: int
 
+
 class SettingsConf(BaseModel):
     consensus_service: ConsensusService
-    consensus_criteria: ConsensusCriteria
     redis: RedisConfig
-    test_redis: Optional[RedisConfig]
     chain: ChainConfig
+    anchor_chain_rpc: AnchorRPCConfig
     rate_limit: str
     rlimit: RLimit
     ticker_begin_block: Optional[int]
-
-
-# Data model for a list of snapshotters
-class ProjectSpecificSnapshotters(BaseModel):
-    projectId: str
-    snapshotters: List[str]
 
 
 class Epoch(BaseModel):
@@ -139,76 +98,17 @@ class Epoch(BaseModel):
     finalized: bool
 
 
-# Data model for a list of epoch data
-class EpochData(BaseModel):
-    projectId: str
-    epochs: List[Epoch]
-
-
-# Data model for a submission
-class Submission(BaseModel):
-    snapshotterName: str
-    snapshotCID: str
-    submittedTS: int
-    submissionStatus: SubmissionStatus
-
-
 class Message(BaseModel):
     message: str
 
 
-class EpochInfo(BaseModel):
-    chainId: int
-    epochStartBlockHeight: int
-    epochEndBlockHeight: int
-
-
-class EpochDataPage(BaseModel):
-    total: int
-    next_page: Optional[str]
-    prev_page: Optional[str]
-    data: EpochData
-
-
-class EpochDetails(BaseModel):
-    epochEndHeight: int
-    releaseTime: int
-    status: EpochStatus
-    totalProjects: int
-    projectsFinalized: int
-
-
-class SnapshotterIssueSeverity(str, Enum):
-    high = 'HIGH'
-    medium = 'MEDIUM'
-    low = 'LOW'
-    cleared = 'CLEARED'
-
-
 class SnapshotterIssue(BaseModel):
     instanceID: str
-    namespace: Optional[str]
-    severity: SnapshotterIssueSeverity
     issueType: str
     projectID: str
-    serviceName: str
-    epochs: Optional[List[int]]
-    extra: Optional[dict]
-    timeOfReporting: Optional[int]
-    noOfEpochsBehind: Optional[int]
-
-
-class SnapshotterAliasIssue(BaseModel):
-    alias: str
-    namespace: Optional[str]
-    severity: SnapshotterIssueSeverity
-    issueType: str
-    projectID: str
-    serviceName: str
-    epochs: Optional[List[int]]
-    extra: Optional[dict]
-    timeOfReporting: Optional[int]
-    noOfEpochsBehind: Optional[int]
+    epochId: str
+    timeOfReporting: str
+    extra: Optional[str] = ''
 
 
 class UserStatusEnum(str, Enum):

@@ -1,19 +1,17 @@
-import os
-import logging
-import sys
 import resource
-from gunicorn.app.base import BaseApplication
-from gunicorn.glogging import Logger
-from loguru import logger
-from settings.conf import settings
-from consensus_entry_point import app
 
-WORKERS = int(os.environ.get("GUNICORN_WORKERS", "20"))
+from gunicorn.app.base import BaseApplication
+
+from reporting_service_entry_point import app
+from settings.conf import settings
 
 
 def post_worker_init(worker):
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    resource.setrlimit(resource.RLIMIT_NOFILE, (settings.rlimit.file_descriptors, hard))
+    resource.setrlimit(
+        resource.RLIMIT_NOFILE,
+        (settings.rlimit.file_descriptors, hard),
+    )
 
 
 class StandaloneApplication(BaseApplication):
@@ -38,13 +36,13 @@ class StandaloneApplication(BaseApplication):
 
 if __name__ == '__main__':
 
-
     options = {
-        "bind": f"{settings.consensus_service.host}:{settings.consensus_service.port}",
-        "keepalive": settings.consensus_service.keepalive_secs,
-        "workers": WORKERS,
-        "worker_class": "uvicorn.workers.UvicornWorker",
-        "post_worker_init": post_worker_init
+        'bind': f'{settings.consensus_service.host}:{settings.consensus_service.port}',
+        'keepalive': settings.consensus_service.keepalive_secs,
+        'workers': settings.consensus_service.gunicorn_workers,
+        'timeout': 120,
+        'worker_class': 'uvicorn.workers.UvicornWorker',
+        'post_worker_init': post_worker_init,
     }
 
     StandaloneApplication(app, options).run()

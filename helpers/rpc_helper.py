@@ -4,9 +4,9 @@ from itertools import repeat
 
 import requests
 
+from .message_models import RPCNodesObject
 from settings.conf import settings
 from utils.default_logger import logger
-from .message_models import RPCNodesObject
 
 rpc_logger = logger.bind(module='PowerLoom|OffChainConsensus|RPCHelper')
 REQUEST_TIMEOUT = settings.chain.rpc.request_timeout
@@ -37,7 +37,7 @@ class BailException(RuntimeError):
 class ConstructRPC:
     def __init__(self, network_id):
         self._network_id = network_id
-        self._querystring = {"id": network_id, "jsonrpc": "2.0"}
+        self._querystring = {'id': network_id, 'jsonrpc': '2.0'}
 
     def sync_post_json_rpc(self, procedure, rpc_nodes: RPCNodesObject, params=None):
         q_s = self.construct_one_time_rpc(procedure=procedure, params=params)
@@ -47,8 +47,8 @@ class ConstructRPC:
         while True:
             if all(val == rpc_nodes.RETRY_LIMIT for val in retry.values()):
                 rpc_logger.error(
-                    "Retry limit reached for all RPC endpoints. Following request {}: {}",
-                    q_s, retry
+                    'Retry limit reached for all RPC endpoints. Following request {}: {}',
+                    q_s, retry,
                 )
                 raise BailException
             for _url in rpc_urls:
@@ -56,9 +56,11 @@ class ConstructRPC:
                     retry[_url] += 1
                     r = requests.post(_url, json=q_s, timeout=REQUEST_TIMEOUT)
                     json_response = r.json()
-                except (requests.exceptions.Timeout,
-                        requests.exceptions.ConnectionError,
-                        requests.exceptions.HTTPError):
+                except (
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.HTTPError,
+                ):
                     success = False
                 except Exception as e:
                     success = False
@@ -69,9 +71,11 @@ class ConstructRPC:
                     return json_response
 
     def rpc_eth_blocknumber(self, rpc_nodes: RPCNodesObject):
-        rpc_response = self.sync_post_json_rpc(procedure="eth_blockNumber", rpc_nodes=rpc_nodes)
+        rpc_response = self.sync_post_json_rpc(
+            procedure='eth_blockNumber', rpc_nodes=rpc_nodes,
+        )
         try:
-            new_blocknumber = int(rpc_response["result"], 16)
+            new_blocknumber = int(rpc_response['result'], 16)
         except Exception as e:
             raise BailException
         else:
@@ -79,22 +83,24 @@ class ConstructRPC:
 
     @auto_retry(tries=RETRY_LIMIT, exc=BailException)
     def rpc_eth_getblock_by_number(self, blocknum, rpc_nodes):
-        rpc_response = self.sync_post_json_rpc(procedure="eth_getBlockByNumber", rpc_nodes=rpc_nodes,
-                                               params=[hex(blocknum), False])
+        rpc_response = self.sync_post_json_rpc(
+            procedure='eth_getBlockByNumber', rpc_nodes=rpc_nodes,
+            params=[hex(blocknum), False],
+        )
         try:
-            blockdetails = rpc_response["result"]
+            blockdetails = rpc_response['result']
         except Exception as e:
             raise
         else:
             return blockdetails
 
     def construct_one_time_rpc(self, procedure, params, default_block=None):
-        self._querystring["method"] = procedure
-        self._querystring["params"] = []
+        self._querystring['method'] = procedure
+        self._querystring['params'] = []
         if type(params) is list:
-            self._querystring["params"].extend(params)
+            self._querystring['params'].extend(params)
         elif params is not None:
-            self._querystring["params"].append(params)
+            self._querystring['params'].append(params)
         if default_block is not None:
-            self._querystring["params"].append(default_block)
+            self._querystring['params'].append(default_block)
         return self._querystring

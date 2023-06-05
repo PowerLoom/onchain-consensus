@@ -1,8 +1,10 @@
 from enum import Enum
 from typing import List
 from typing import Optional
-from data_models import SnapshotterMetadata
+
 from pydantic import BaseModel
+
+from data_models import SnapshotterMetadata
 
 
 class UserStatusEnum(str, Enum):
