@@ -84,7 +84,7 @@ class EpochGenerator:
         self.last_sent_block = 0
         self._end = None
         self.nonce = w3.eth.getTransactionCount(
-            settings.anchor_chain_rpc.owner_address,
+            settings.anchor_chain_rpc.validator_address,
         )
         self.epochId = 1
 
@@ -117,7 +117,6 @@ class EpochGenerator:
             )
             return -1
 
-
     @redis_cleanup
     async def run(self):
         await self.setup()
@@ -125,7 +124,7 @@ class EpochGenerator:
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
-        
+
         last_contract_epoch = self._fetch_epoch_from_contract()
         if last_contract_epoch != -1:
             begin_block_epoch = last_contract_epoch
@@ -211,8 +210,8 @@ class EpochGenerator:
                         for project in projects:
                             try:
                                 tx_hash = write_transaction(
-                                    settings.anchor_chain_rpc.owner_address,
-                                    settings.anchor_chain_rpc.owner_private_key,
+                                    settings.anchor_chain_rpc.validator_address,
+                                    settings.anchor_chain_rpc.validator_private_key,
                                     protocol_state_contract,
                                     'forceCompleteConsensusSnapshot',
                                     self.nonce,
@@ -231,7 +230,7 @@ class EpochGenerator:
                                 time.sleep(60)
                                 # reset nonce
                                 self.nonce = w3.eth.getTransactionCount(
-                                    settings.anchor_chain_rpc.owner_address,
+                                    settings.anchor_chain_rpc.validator_address,
                                 )
 
                                 last_contract_epoch = self._fetch_epoch_from_contract()
@@ -240,8 +239,8 @@ class EpochGenerator:
 
                         try:
                             tx_hash = write_transaction(
-                                settings.anchor_chain_rpc.owner_address,
-                                settings.anchor_chain_rpc.owner_private_key,
+                                settings.anchor_chain_rpc.validator_address,
+                                settings.anchor_chain_rpc.validator_private_key,
                                 protocol_state_contract,
                                 'releaseEpoch',
                                 self.nonce,
@@ -261,7 +260,7 @@ class EpochGenerator:
                             time.sleep(60)
                             # reset nonce
                             self.nonce = w3.eth.getTransactionCount(
-                                settings.anchor_chain_rpc.owner_address,
+                                settings.anchor_chain_rpc.validator_address,
                             )
 
                             last_contract_epoch = self._fetch_epoch_from_contract()

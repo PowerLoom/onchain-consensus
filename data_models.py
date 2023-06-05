@@ -61,8 +61,8 @@ class AnchorRPCConfig(BaseModel):
     retry: int
     chain_id: int
     protocol_state_address: str
-    owner_address: str
-    owner_private_key: str
+    validator_address: str
+    validator_private_key: str
     request_time_out: int
 
 

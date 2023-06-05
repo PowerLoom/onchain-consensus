@@ -7,25 +7,20 @@
 - [Development Instructions](#development-instructions)
 - [Monitoring and Debugging](#monitoring-and-debugging)
 - [Epoch Generation](#epoch-generation)
-- [Using the Snapshotter CLI](#using-the-snapshotter-cli)
 - [Running just Consensus service using Docker](#running-just-consensus-service-using-docker)
 
 ## Overview
 
-Offchain Consensus is a temporary consensus layer for Powerloom Protocol. Its purpose is to demonstrate proof of concept while we develop the on-chain and fully decentralized consensus. Offchain Consensus is component of a fully functional, distributed system that works alongside Audit Protocol and Pooler. Together, these systems are responsible for the following:
-
-- generating a time series database of changes occurring over smart contract state data and event logs that live on decentralized storage protocols
-- higher order aggregated information calculated over decentralized indexes maintained atop the database mentioned above
-
-Offchain Consensus performs the following functions:
+![Overall Architecture](https://github.com/PowerLoom/pooler/raw/main/pooler/static/docs/assets/OverallArchitecture.png)
+Offchain Consensus (TO BE RENAMED) is part of the *Admin Module* in the overall architecture. It currently serves the following important roles -
 
 1. Maintains and releases `Epoch` depending on chain and use case configuration
-2. Receives snapshot submissions from all snapshotters and achieves consensus wherever possible
-3. Provides a set of APIs for metrics and system state statistics
+2. Checks and completes consensus (if necessary) by interacting with the Protocol State contract for the previous Epoch before the next Epoch is released
+3. Provides a set of APIs for metrics and system state statistics where snapshotters can report their issues and overall network health can be monitored
 
 ## Setup
 
-Offchain Consensus alone is not of much use. If you're a snapshotter, you don't need to worry about this service as Powerloom provides `CONSENSUS_URL`, which you and other snapshotters will be using. But if you're a developer and want to play around with the system and build your use case, then you should follow [these instructions](https://github.com/PowerLoom/deploy#instructions-for-code-contributors) to set up the Powerloom System.
+Offchain Consensus, currently, is only relevant to you if you're a validator. Snapshotters can just use the provided reporting URL in their configuration. But if you're a developer and want to play around with the system and build your use case, then you should follow [these instructions](https://github.com/PowerLoom/deploy#instructions-for-code-contributors) to set up the Powerloom System.
 
 ## Development Instructions
 
@@ -36,23 +31,24 @@ These instructions are needed if you're planning to run the system using `build-
 The Offchain Consensus system needs the `settings.json` file to be present in the `settings` directory. We've provided `settings/settings.example.json` for you to get started. Changes are trivial. Copy `settings.example.json` to `settings.json` and make the necessary configuration changes.
 
 #### Configuring settings.json
-There are a lot of configuration in `settings.json` file, most of them are self explanatory but here are the few that are not
-- `consensus_criteria.min_snapshotter_count` is the minimum number of submissions required to achieve consensus at the end of submission window if consensus is not yet achieved
-- `consensus_criteria.percentage` is the percentage of snapshotters submitting the same snapshot to achieve consensus
-- `ticker_begin_block` is the block from which you want epoch detector service to start (starts from current block if set to 0)
-- `epoch.height` is the size of one epoch. This can depend on use case and chain in use
-- `epoch.block_time` is the rough block time of current blockchain being used, for example for ETH mainnet you can use `15`
+
+There are a lot of configurations in the `settings.json` file, most of them are self-explanatory but here are the few that are not
+- `ticker_begin_block` is the block from which you want the `epoch_generator` service to start (starts from the current block if set to 0)
+- `anchor_chain_rpc.url` is the RPC URL for Prost Chain where the protocol state lives
+- `anchor_chain_rpc.protcol_state_address` is the Protocol State contract address with which `EpochGenerator` interacts and releases Epochs
+- `anchor_chain_rpc.validator_address` is the EVM account address for the validator this is releasing/finalizing Epochs
+- `anchor_chain_rpc.validator_private_key` is the validator EVM account address private key
 
 ## Monitoring and Debugging
 
-Login to Offchain Consensus Docker container using `docker exec -it <container_id> bash` (use `docker ps` to see running containers) and use the following commands for monitoring and debugging:
+Login to the Offchain Consensus Docker container using `docker exec -it <container_id> bash` (use `docker ps` to see running containers) and use the following commands for monitoring and debugging:
 
 - To monitor the status of running processes, run `pm2 status`.
 - To see all logs, run `pm2 logs`.
 - To see logs for a specific process, run `pm2 logs <Process Identifier>`.
 - To see only error logs, run `pm2 logs --err`.
 
-Or you can simply use `docker logs -f offchain-consensus` if you don't want to go inside docker container.
+Or you can simply use `docker logs -f offchain-consensus` if you don't want to go inside the docker container.
 ## Epoch Generation
 
 An epoch denotes a range of block heights on the data source blockchain, Ethereum mainnet in the case of Uniswap v2. This makes it easier to collect state transitions and snapshots of data on equally spaced block height intervals, as well as to support future work on other lightweight anchor proof mechanisms like Merkle proofs, succinct proofs, etc.
@@ -66,32 +62,15 @@ The size of an epoch is configurable. Let that be referred to as `size(E)`.
 
  and then publishes an epoch `(h₁, h₂)` so that `h₂ - h₁ + 1 == size(E)`. The next epoch, therefore, is tracked from `h₂ + 1`.
 
-## Using the Snapshotter CLI
-Snapshotter CLI is a CLI interface to manage allowed snapshotters in the system. It has the following commands available
-
-1. Add a snapshotter
-```bash
-poetry run python -m snapshotter_cli add-snapshotter '{"rate_limit": "10000/day;300/minute;40/second", "active": "active", "name": "HappySnapper", "email": "xyx@abc.com", "alias": "ALIAS"}'
-```
-
-2. Disable a snapshotter
-```bash
-python -m snapshotter_cli disable-snapshotter <ALIAS>
-```
-
-3. Enable a disabled snapshotter
-```bash
-python -m snapshotter_cli enable-snapshotter <ALIAS>
-```
 
 ## Running just Consensus service using Docker
-If you want to deploy consensus service for some reason, you can do so by following the following steps
+If you want to deploy consensus service for some reason, you can do so by following the following steps:
 
 - Build the image using `./build-docker.sh`
 - Run the image using
 ```bash
-docker rm -f offchain-consensus && docker run -p 9030:9030 --name offchain-consensus -d powerloom-offchain-consensus:latest && docker logs -f offchain-consensus
-```
-This will run consensus layer on port `9030` of your host.
+ docker rm -f offchain-consensus && docker run --add-host host.docker.internal:host-gateway -p 8080:8080 --name offchain-consensus -d powerloom-offchain-consensus:latest && docker logs -f offchain-consensus
+ ```
+This will run the consensus layer on port `9030` of your host.
 ### Consensus Dashboard
 The UI dashboard for this is hosted at [ap-consensus-dashboard](https://github.com/PowerLoom/ap-consensus-dashboard), please follow the deploy instructions there to run the UI.
