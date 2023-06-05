@@ -1,6 +1,5 @@
 {
     "consensus_service": {
-		"submission_window": 60,
 		"host": "0.0.0.0",
 		"port": 9030,
 		"keys_ttl": 86400,

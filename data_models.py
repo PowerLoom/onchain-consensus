@@ -32,7 +32,6 @@ class SnapshotBase(PeerUUIDIncludedRequests):
 
 
 class ConsensusService(BaseModel):
-    submission_window: int
     host: str
     port: str
     keepalive_secs: int

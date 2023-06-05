@@ -1,13 +1,8 @@
-import logging
-import os
 import resource
-import sys
 
 from gunicorn.app.base import BaseApplication
-from gunicorn.glogging import Logger
-from loguru import logger
 
-from consensus_entry_point import app
+from reporting_service_entry_point import app
 from settings.conf import settings
 
 

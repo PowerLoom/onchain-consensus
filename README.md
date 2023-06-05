@@ -37,7 +37,6 @@ The Offchain Consensus system needs the `settings.json` file to be present in th
 
 #### Configuring settings.json
 There are a lot of configuration in `settings.json` file, most of them are self explanatory but here are the few that are not
-- `consensus_service.submission_window` is time window (seconds) in which submissions from snapshotters are considered `within schedule` for consensus
 - `consensus_criteria.min_snapshotter_count` is the minimum number of submissions required to achieve consensus at the end of submission window if consensus is not yet achieved
 - `consensus_criteria.percentage` is the percentage of snapshotters submitting the same snapshot to achieve consensus
 - `ticker_begin_block` is the block from which you want epoch detector service to start (starts from current block if set to 0)
