@@ -208,35 +208,41 @@ class EpochGenerator:
                             'Force completing consensus for projects: {}', projects,
                         )
                         for project in projects:
-                            try:
-                                tx_hash = write_transaction(
-                                    settings.anchor_chain_rpc.validator_address,
-                                    settings.anchor_chain_rpc.validator_private_key,
-                                    protocol_state_contract,
-                                    'forceCompleteConsensusSnapshot',
-                                    self.nonce,
-                                    project,
-                                    self.epochId,
-                                )
-                                self.nonce += 1
+                            if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
+                                project, self.epochId,
+                            ).call():
+                                try:
+                                    tx_hash = write_transaction(
+                                        settings.anchor_chain_rpc.validator_address,
+                                        settings.anchor_chain_rpc.validator_private_key,
+                                        protocol_state_contract,
+                                        'forceCompleteConsensusSnapshot',
+                                        self.nonce,
+                                        project,
+                                        self.epochId,
+                                    )
+                                    self.nonce += 1
+                                    self._logger.info(
+                                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
+                                    )
+                                except Exception as ex:
+                                    self._logger.error(
+                                        'Unable to force complete consensus for project: {}, error: {}', project, ex,
+                                    )
+                                    # sleep for 60 seconds to avoid nonce collision
+                                    time.sleep(60)
+                                    # reset nonce
+                                    self.nonce = w3.eth.getTransactionCount(
+                                        settings.anchor_chain_rpc.validator_address,
+                                    )
+
+                                    last_contract_epoch = self._fetch_epoch_from_contract()
+                                    if last_contract_epoch != -1:
+                                        begin_block_epoch = last_contract_epoch
+                            else:
                                 self._logger.info(
-                                    'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
+                                    'Consensus already achieved for project: {}', project,
                                 )
-                            except Exception as ex:
-                                self._logger.error(
-                                    'Unable to force complete consensus for project: {}, error: {}', project, ex,
-                                )
-                                # sleep for 60 seconds to avoid nonce collision
-                                time.sleep(60)
-                                # reset nonce
-                                self.nonce = w3.eth.getTransactionCount(
-                                    settings.anchor_chain_rpc.validator_address,
-                                )
-
-                                last_contract_epoch = self._fetch_epoch_from_contract()
-                                if last_contract_epoch != -1:
-                                    begin_block_epoch = last_contract_epoch
-
                         try:
                             tx_hash = write_transaction(
                                 settings.anchor_chain_rpc.validator_address,
