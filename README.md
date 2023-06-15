@@ -1,4 +1,4 @@
-# Offchain Consensus
+# Onchain Consensus
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@
 ## Overview
 
 ![Overall Architecture](https://github.com/PowerLoom/pooler/raw/main/pooler/static/docs/assets/OverallArchitecture.png)
-Offchain Consensus (TO BE RENAMED) is part of the *Admin Module* in the overall architecture. It currently serves the following important roles -
+Onchain Consensus is part of the *Admin Module* in the overall architecture. It currently serves the following important roles -
 
 1. Maintains and releases `Epoch` depending on chain and use case configuration
 2. Checks and completes consensus (if necessary) by interacting with the Protocol State contract for the previous Epoch before the next Epoch is released
@@ -20,7 +20,7 @@ Offchain Consensus (TO BE RENAMED) is part of the *Admin Module* in the overall 
 
 ## Setup
 
-Offchain Consensus, currently, is only relevant to you if you're a validator. Snapshotters can just use the provided reporting URL in their configuration. But if you're a developer and want to play around with the system and build your use case, then you should follow [these instructions](https://github.com/PowerLoom/deploy#instructions-for-code-contributors) to set up the Powerloom System.
+Onchain Consensus, currently, is only relevant to you if you're a validator. Snapshotters can just use the provided reporting URL in their configuration. But if you're a developer and want to play around with the system and build your use case, then you should follow [these instructions](https://github.com/PowerLoom/deploy#instructions-for-code-contributors) to set up the Powerloom System.
 
 ## Development Instructions
 
@@ -28,7 +28,7 @@ These instructions are needed if you're planning to run the system using `build-
 
 ### Generate Config
 
-The Offchain Consensus system needs the `settings.json` file to be present in the `settings` directory. We've provided `settings/settings.example.json` for you to get started. Changes are trivial. Copy `settings.example.json` to `settings.json` and make the necessary configuration changes.
+The Onchain Consensus system needs the `settings.json` file to be present in the `settings` directory. We've provided `settings/settings.example.json` for you to get started. Changes are trivial. Copy `settings.example.json` to `settings.json` and make the necessary configuration changes.
 
 #### Configuring settings.json
 
@@ -41,14 +41,14 @@ There are a lot of configurations in the `settings.json` file, most of them are 
 
 ## Monitoring and Debugging
 
-Login to the Offchain Consensus Docker container using `docker exec -it <container_id> bash` (use `docker ps` to see running containers) and use the following commands for monitoring and debugging:
+Login to the Onchain Consensus Docker container using `docker exec -it <container_id> bash` (use `docker ps` to see running containers) and use the following commands for monitoring and debugging:
 
 - To monitor the status of running processes, run `pm2 status`.
 - To see all logs, run `pm2 logs`.
 - To see logs for a specific process, run `pm2 logs <Process Identifier>`.
 - To see only error logs, run `pm2 logs --err`.
 
-Or you can simply use `docker logs -f offchain-consensus` if you don't want to go inside the docker container.
+Or you can simply use `docker logs -f onchain-consensus` if you don't want to go inside the docker container.
 ## Epoch Generation
 
 An epoch denotes a range of block heights on the data source blockchain, Ethereum mainnet in the case of Uniswap v2. This makes it easier to collect state transitions and snapshots of data on equally spaced block height intervals, as well as to support future work on other lightweight anchor proof mechanisms like Merkle proofs, succinct proofs, etc.
@@ -69,7 +69,7 @@ If you want to deploy consensus service for some reason, you can do so by follow
 - Build the image using `./build-docker.sh`
 - Run the image using
 ```bash
- docker rm -f offchain-consensus && docker run --add-host host.docker.internal:host-gateway -p 8080:8080 --name offchain-consensus -d powerloom-offchain-consensus:latest && docker logs -f offchain-consensus
+ docker rm -f onchain-consensus && docker run --add-host host.docker.internal:host-gateway -p 8080:8080 --name onchain-consensus -d powerloom-onchain-consensus:latest && docker logs -f onchain-consensus
  ```
 This will run the consensus layer on port `9030` of your host.
 ### Consensus Dashboard
