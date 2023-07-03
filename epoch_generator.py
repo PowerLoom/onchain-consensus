@@ -23,6 +23,7 @@ from settings.conf import settings
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
+from utils.transaction_utils import write_transaction_with_receipt
 
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
@@ -203,7 +204,6 @@ class EpochGenerator:
                         )
 
                         projects = protocol_state_contract.functions.getProjects().call()
-
                         self._logger.info(
                             'Force completing consensus for projects: {}', projects,
                         )
@@ -230,7 +230,7 @@ class EpochGenerator:
                                         'Unable to force complete consensus for project: {}, error: {}', project, ex,
                                     )
                                     # sleep for 60 seconds to avoid nonce collision
-                                    time.sleep(60)
+                                    time.sleep(30)
                                     # reset nonce
                                     self.nonce = w3.eth.getTransactionCount(
                                         settings.anchor_chain_rpc.validator_address,
@@ -244,7 +244,8 @@ class EpochGenerator:
                                     'Consensus already achieved for project: {}', project,
                                 )
                         try:
-                            tx_hash = write_transaction(
+                            self._logger.info('Attempting to release epoch {}', epoch_block)
+                            tx_hash, receipt = write_transaction_with_receipt(
                                 settings.anchor_chain_rpc.validator_address,
                                 settings.anchor_chain_rpc.validator_private_key,
                                 protocol_state_contract,
@@ -253,6 +254,23 @@ class EpochGenerator:
                                 epoch_block['begin'],
                                 epoch_block['end'],
                             )
+
+                            if receipt['status'] != 1:
+                                self._logger.error(
+                                    'Unable to release epoch, error: {}', receipt['status'],
+                                )
+                                # sleep for 60 seconds to avoid nonce collision
+                                time.sleep(30)
+                                # reset nonce
+                                self.nonce = w3.eth.getTransactionCount(
+                                    settings.anchor_chain_rpc.validator_address,
+                                )
+
+                                last_contract_epoch = self._fetch_epoch_from_contract()
+                                if last_contract_epoch != -1:
+                                    begin_block_epoch = last_contract_epoch
+                                continue
+
                             self.nonce += 1
                             self.epochId += 1
                             self._logger.debug(
@@ -263,7 +281,7 @@ class EpochGenerator:
                                 'Unable to release epoch, error: {}', ex,
                             )
                             # sleep for 60 seconds to avoid nonce collision
-                            time.sleep(60)
+                            time.sleep(30)
                             # reset nonce
                             self.nonce = w3.eth.getTransactionCount(
                                 settings.anchor_chain_rpc.validator_address,
