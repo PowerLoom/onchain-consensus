@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import threading
 import time
 from functools import wraps
@@ -130,7 +131,8 @@ class EpochGenerator:
         if last_contract_epoch != -1:
             begin_block_epoch = last_contract_epoch
 
-        sleep_secs_between_chunks = 60
+        # waiting to release epoch chunks every half of block time
+        sleep_secs_between_chunks = settings.epoch.block_time // 2
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
@@ -229,7 +231,7 @@ class EpochGenerator:
                                     self._logger.error(
                                         'Unable to force complete consensus for project: {}, error: {}', project, ex,
                                     )
-                                    # sleep for 60 seconds to avoid nonce collision
+                                    # sleep for 30 seconds to avoid nonce collision
                                     time.sleep(30)
                                     # reset nonce
                                     self.nonce = w3.eth.getTransactionCount(
@@ -245,31 +247,44 @@ class EpochGenerator:
                                 )
                         try:
                             self._logger.info('Attempting to release epoch {}', epoch_block)
-                            tx_hash, receipt = write_transaction_with_receipt(
-                                settings.anchor_chain_rpc.validator_address,
-                                settings.anchor_chain_rpc.validator_private_key,
-                                protocol_state_contract,
-                                'releaseEpoch',
-                                self.nonce,
-                                epoch_block['begin'],
-                                epoch_block['end'],
-                            )
-
-                            if receipt['status'] != 1:
-                                self._logger.error(
-                                    'Unable to release epoch, error: {}', receipt['status'],
-                                )
-                                # sleep for 60 seconds to avoid nonce collision
-                                time.sleep(30)
-                                # reset nonce
-                                self.nonce = w3.eth.getTransactionCount(
+                            rand = random.random()
+                            if rand < 0.1:
+                                tx_hash, receipt = write_transaction_with_receipt(
                                     settings.anchor_chain_rpc.validator_address,
+                                    settings.anchor_chain_rpc.validator_private_key,
+                                    protocol_state_contract,
+                                    'releaseEpoch',
+                                    self.nonce,
+                                    epoch_block['begin'],
+                                    epoch_block['end'],
                                 )
 
-                                last_contract_epoch = self._fetch_epoch_from_contract()
-                                if last_contract_epoch != -1:
-                                    begin_block_epoch = last_contract_epoch
-                                continue
+                                if receipt['status'] != 1:
+                                    self._logger.error(
+                                        'Unable to release epoch, error: {}', receipt['status'],
+                                    )
+                                    # sleep for 30 seconds to avoid nonce collision
+                                    time.sleep(30)
+                                    # reset nonce
+                                    self.nonce = w3.eth.getTransactionCount(
+                                        settings.anchor_chain_rpc.validator_address,
+                                    )
+
+                                    last_contract_epoch = self._fetch_epoch_from_contract()
+                                    if last_contract_epoch != -1:
+                                        begin_block_epoch = last_contract_epoch
+                                    continue
+
+                            else:
+                                tx_hash = write_transaction(
+                                    settings.anchor_chain_rpc.validator_address,
+                                    settings.anchor_chain_rpc.validator_private_key,
+                                    protocol_state_contract,
+                                    'releaseEpoch',
+                                    self.nonce,
+                                    epoch_block['begin'],
+                                    epoch_block['end'],
+                                )
 
                             self.nonce += 1
                             self.epochId += 1
@@ -280,7 +295,7 @@ class EpochGenerator:
                             self._logger.error(
                                 'Unable to release epoch, error: {}', ex,
                             )
-                            # sleep for 60 seconds to avoid nonce collision
+                            # sleep for 30 seconds to avoid nonce collision
                             time.sleep(30)
                             # reset nonce
                             self.nonce = w3.eth.getTransactionCount(
