@@ -13,7 +13,8 @@ from time import sleep
 
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
-from web3 import Web3
+from web3 import AsyncHTTPProvider
+from web3 import AsyncWeb3
 
 from exceptions import GenericExitOnSignal
 from helpers.message_models import RPCNodesObject
@@ -26,12 +27,14 @@ from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 from utils.transaction_utils import write_transaction_with_receipt
+
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
 # load abi from json file and create contract object
 with open('utils/static/abi.json', 'r') as f:
     abi = json.load(f)
-w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+
+w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
 protocol_state_contract = w3.eth.contract(
     address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
 )
@@ -73,13 +76,14 @@ class EpochGenerator:
         self._shutdown_initiated = False
         self.last_sent_block = 0
         self._end = None
-        self.nonce = w3.eth.getTransactionCount(
-            settings.anchor_chain_rpc.validator_epoch_address,
-        )
+        self.nonce = -1
         self.epochId = 1
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
+        self.nonce = await w3.eth.get_transaction_count(
+            settings.anchor_chain_rpc.validator_epoch_address,
+        )
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
@@ -90,8 +94,8 @@ class EpochGenerator:
             self._shutdown_initiated = True
             raise GenericExitOnSignal
 
-    def _fetch_epoch_from_contract(self) -> int:
-        last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
+    async def _fetch_epoch_from_contract(self) -> int:
+        last_epoch_data = await protocol_state_contract.functions.currentEpoch().call()
         if last_epoch_data[1]:
             self._logger.debug(
                 'Found last epoch block : {} in contract. Starting from checkpoint.', last_epoch_data[
@@ -115,7 +119,7 @@ class EpochGenerator:
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
 
-        last_contract_epoch = self._fetch_epoch_from_contract()
+        last_contract_epoch = await self._fetch_epoch_from_contract()
         if last_contract_epoch != -1:
             begin_block_epoch = last_contract_epoch
 
@@ -197,7 +201,7 @@ class EpochGenerator:
                             self._logger.info('Attempting to release epoch {}', epoch_block)
                             rand = random.random()
                             if rand < 0.1:
-                                tx_hash, receipt = write_transaction_with_receipt(
+                                tx_hash, receipt = await write_transaction_with_receipt(
                                     w3,
                                     settings.anchor_chain_rpc.validator_epoch_address,
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
@@ -215,17 +219,17 @@ class EpochGenerator:
                                     # sleep for 30 seconds to avoid nonce collision
                                     time.sleep(30)
                                     # reset nonce
-                                    self.nonce = w3.eth.getTransactionCount(
+                                    self.nonce = await w3.eth.get_transaction_count(
                                         settings.anchor_chain_rpc.validator_epoch_address,
                                     )
 
-                                    last_contract_epoch = self._fetch_epoch_from_contract()
+                                    last_contract_epoch = await self._fetch_epoch_from_contract()
                                     if last_contract_epoch != -1:
                                         begin_block_epoch = last_contract_epoch
                                     continue
 
                             else:
-                                tx_hash = write_transaction(
+                                tx_hash = await write_transaction(
                                     w3,
                                     settings.anchor_chain_rpc.validator_epoch_address,
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
@@ -248,11 +252,11 @@ class EpochGenerator:
                             # sleep for 30 seconds to avoid nonce collision
                             time.sleep(30)
                             # reset nonce
-                            self.nonce = w3.eth.getTransactionCount(
+                            self.nonce = await w3.eth.get_transaction_count(
                                 settings.anchor_chain_rpc.validator_epoch_address,
                             )
 
-                            last_contract_epoch = self._fetch_epoch_from_contract()
+                            last_contract_epoch = await self._fetch_epoch_from_contract()
                             if last_contract_epoch != -1:
                                 begin_block_epoch = last_contract_epoch
 

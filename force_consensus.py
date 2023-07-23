@@ -8,7 +8,8 @@ import aiorwlock
 import uvloop
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
-from web3 import Web3
+from web3 import AsyncHTTPProvider
+from web3 import AsyncWeb3
 
 from helpers.message_models import RPCNodesObject
 from helpers.rpc_helper import ConstructRPC
@@ -17,12 +18,16 @@ from utils.chunk_helper import chunks
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
+
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
 # load abi from json file and create contract object
 with open('utils/static/abi.json', 'r') as f:
     abi = json.load(f)
-w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+# w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+
+w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+
 protocol_state_contract = w3.eth.contract(
     address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
 )
@@ -40,19 +45,21 @@ class ForceConsensus:
         self._shutdown_initiated = False
         self.last_sent_block = 0
         self._end = None
-        self.nonce = w3.eth.getTransactionCount(
-            settings.anchor_chain_rpc.validator_consensus_address,
-        )
         self._rwlock = None
         self.epochId = 1
         self._pending_epochs = set()
         self._submission_window = 0
         self._semaphore = asyncio.Semaphore(value=20)
+        self.nonce = -1
 
     async def setup(self):
 
         if not self._rwlock:
             self._rwlock = aiorwlock.RWLock()
+
+        self.nonce = await w3.eth.get_transaction_count(
+            settings.anchor_chain_rpc.validator_consensus_address,
+        )
 
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         await self._aioredis_pool.populate()
@@ -62,12 +69,12 @@ class ForceConsensus:
 
     async def _call_force_complete_consensus(self, project, epochId):
         async with self._semaphore:
-            if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
+            if await protocol_state_contract.functions.checkDynamicConsensusSnapshot(
                 project, epochId,
             ).call():
                 try:
                     async with self._rwlock.writer_lock:
-                        tx_hash = write_transaction(
+                        tx_hash = await write_transaction(
                             w3,
                             settings.anchor_chain_rpc.validator_consensus_address,
                             settings.anchor_chain_rpc.validator_consensus_private_key,
@@ -89,7 +96,7 @@ class ForceConsensus:
                     async with self._rwlock.writer_lock:
                         # sleep for 5 seconds to avoid nonce collision
                         await asyncio.sleep(5)
-                        self.nonce = w3.eth.getTransactionCount(
+                        self.nonce = await w3.eth.get_transaction_count(
                             settings.anchor_chain_rpc.validator_consensus_address,
                         )
             else:
@@ -110,7 +117,7 @@ class ForceConsensus:
 
         self._logger.info('Processing Epochs {}', epochs_to_process)
         if epochs_to_process:
-            projects = protocol_state_contract.functions.getProjects().call()
+            projects = await protocol_state_contract.functions.getProjects().call()
             self._logger.info(
                 'Force completing consensus for projects: {}', projects,
             )
@@ -128,8 +135,8 @@ class ForceConsensus:
                         'Error while force completing consensus: {}', result,
                     )
 
-    def _fetch_epoch_from_contract(self) -> int:
-        last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
+    async def _fetch_epoch_from_contract(self) -> int:
+        last_epoch_data = await protocol_state_contract.functions.currentEpoch().call()
         if last_epoch_data[1]:
             self._logger.debug(
                 'Found last epoch block : {} in contract. Starting from checkpoint.', last_epoch_data[
@@ -149,11 +156,11 @@ class ForceConsensus:
         await self.setup()
 
         if self._submission_window == 0:
-            self._submission_window = protocol_state_contract.functions.snapshotSubmissionWindow().call()
+            self._submission_window = await protocol_state_contract.functions.snapshotSubmissionWindow().call()
 
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
 
-        last_contract_epoch = self._fetch_epoch_from_contract()
+        last_contract_epoch = await self._fetch_epoch_from_contract()
         if last_contract_epoch != -1:
             begin_block_epoch = last_contract_epoch
 
