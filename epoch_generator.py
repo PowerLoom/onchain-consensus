@@ -86,7 +86,7 @@ class EpochGenerator:
         self.last_sent_block = 0
         self._end = None
         self.nonce = w3.eth.getTransactionCount(
-            settings.anchor_chain_rpc.validator_address,
+            settings.anchor_chain_rpc.validator_epoch_address,
         )
         self.epochId = 1
 
@@ -132,7 +132,7 @@ class EpochGenerator:
             begin_block_epoch = last_contract_epoch
 
         # waiting to release epoch chunks every half of block time
-        sleep_secs_between_chunks = settings.epoch.block_time // 2
+        sleep_secs_between_chunks = settings.chain.epoch.block_time // 2
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
@@ -205,53 +205,13 @@ class EpochGenerator:
                             'Epoch of sufficient length found: {}', epoch_block,
                         )
 
-                        projects = protocol_state_contract.functions.getProjects().call()
-                        self._logger.info(
-                            'Force completing consensus for projects: {}', projects,
-                        )
-                        for project in projects:
-                            if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
-                                project, self.epochId,
-                            ).call():
-                                try:
-                                    tx_hash = write_transaction(
-                                        settings.anchor_chain_rpc.validator_address,
-                                        settings.anchor_chain_rpc.validator_private_key,
-                                        protocol_state_contract,
-                                        'forceCompleteConsensusSnapshot',
-                                        self.nonce,
-                                        project,
-                                        self.epochId,
-                                    )
-                                    self.nonce += 1
-                                    self._logger.info(
-                                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
-                                    )
-                                except Exception as ex:
-                                    self._logger.error(
-                                        'Unable to force complete consensus for project: {}, error: {}', project, ex,
-                                    )
-                                    # sleep for 30 seconds to avoid nonce collision
-                                    time.sleep(30)
-                                    # reset nonce
-                                    self.nonce = w3.eth.getTransactionCount(
-                                        settings.anchor_chain_rpc.validator_address,
-                                    )
-
-                                    last_contract_epoch = self._fetch_epoch_from_contract()
-                                    if last_contract_epoch != -1:
-                                        begin_block_epoch = last_contract_epoch
-                            else:
-                                self._logger.info(
-                                    'Consensus already achieved for project: {}', project,
-                                )
                         try:
                             self._logger.info('Attempting to release epoch {}', epoch_block)
                             rand = random.random()
                             if rand < 0.1:
                                 tx_hash, receipt = write_transaction_with_receipt(
-                                    settings.anchor_chain_rpc.validator_address,
-                                    settings.anchor_chain_rpc.validator_private_key,
+                                    settings.anchor_chain_rpc.validator_epoch_address,
+                                    settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self.nonce,
@@ -267,7 +227,7 @@ class EpochGenerator:
                                     time.sleep(30)
                                     # reset nonce
                                     self.nonce = w3.eth.getTransactionCount(
-                                        settings.anchor_chain_rpc.validator_address,
+                                        settings.anchor_chain_rpc.validator_epoch_address,
                                     )
 
                                     last_contract_epoch = self._fetch_epoch_from_contract()
@@ -277,8 +237,8 @@ class EpochGenerator:
 
                             else:
                                 tx_hash = write_transaction(
-                                    settings.anchor_chain_rpc.validator_address,
-                                    settings.anchor_chain_rpc.validator_private_key,
+                                    settings.anchor_chain_rpc.validator_epoch_address,
+                                    settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self.nonce,
@@ -299,7 +259,7 @@ class EpochGenerator:
                             time.sleep(30)
                             # reset nonce
                             self.nonce = w3.eth.getTransactionCount(
-                                settings.anchor_chain_rpc.validator_address,
+                                settings.anchor_chain_rpc.validator_epoch_address,
                             )
 
                             last_contract_epoch = self._fetch_epoch_from_contract()
