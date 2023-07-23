@@ -3,8 +3,9 @@ import json
 import threading
 import time
 from multiprocessing import Process
-from time import sleep
 
+import aiorwlock
+import uvloop
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
 from web3 import Web3
@@ -12,10 +13,10 @@ from web3 import Web3
 from helpers.message_models import RPCNodesObject
 from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
+from utils.chunk_helper import chunks
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
-
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
 # load abi from json file and create contract object
@@ -27,24 +28,12 @@ protocol_state_contract = w3.eth.contract(
 )
 
 
-def chunks(start_idx, stop_idx, n):
-    run_idx = 0
-    for i in range(start_idx, stop_idx + 1, n):
-        # Create an index range for l of n items:
-        begin_idx = i  # if run_idx == 0 else i+1
-        if begin_idx == stop_idx + 1:
-            return
-        end_idx = i + n - 1 if i + n - 1 <= stop_idx else stop_idx
-        run_idx += 1
-        yield begin_idx, end_idx, run_idx
-
-
 class ForceConsensus:
     _aioredis_pool: RedisPool
     _reader_redis_pool: aioredis.Redis
     _writer_redis_pool: aioredis.Redis
 
-    def __init__(self, name='PowerLoom|OffChainConsensus|ForceConsensus'):
+    def __init__(self, name='PowerLoom|OnChainConsensus|ForceConsensus'):
         self.name = name
         setproctitle(self.name)
         self._logger = logger.bind(module=self.name)
@@ -54,22 +43,61 @@ class ForceConsensus:
         self.nonce = w3.eth.getTransactionCount(
             settings.anchor_chain_rpc.validator_consensus_address,
         )
+        self._rwlock = None
         self.epochId = 1
         self._pending_epochs = set()
         self._submission_window = 0
+        self._semaphore = asyncio.Semaphore(value=20)
 
     async def setup(self):
+
+        if not self._rwlock:
+            self._rwlock = aiorwlock.RWLock()
+
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
         self.redis_thread: threading.Thread
 
+    async def _call_force_complete_consensus(self, project, epochId):
+        async with self._semaphore:
+            if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
+                project, epochId,
+            ).call():
+                try:
+                    async with self._rwlock.writer_lock:
+                        tx_hash = write_transaction(
+                            w3,
+                            settings.anchor_chain_rpc.validator_consensus_address,
+                            settings.anchor_chain_rpc.validator_consensus_private_key,
+                            protocol_state_contract,
+                            'forceCompleteConsensusSnapshot',
+                            self.nonce,
+                            project,
+                            epochId,
+                        )
+                        self.nonce += 1
+                    self._logger.info(
+                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
+                    )
+                except Exception as ex:
+                    self._logger.error(
+                        'Unable to force complete consensus for project: {}, error: {}', project, ex,
+                    )
+                    # reset nonce
+                    async with self._rwlock.writer_lock:
+                        # sleep for 5 seconds to avoid nonce collision
+                        await asyncio.sleep(5)
+                        self.nonce = w3.eth.getTransactionCount(
+                            settings.anchor_chain_rpc.validator_consensus_address,
+                        )
+            else:
+                self._logger.info(
+                    'Consensus already achieved for project: {}', project,
+                )
+
     async def _force_complete_consensus(self):
-
-        if self._submission_window == 0:
-            self._submission_window = protocol_state_contract.functions.snapshotSubmissionWindow().call()
-
         epochs_to_process = []
         epochs_to_remove = set()
         for release_time, epoch in self._pending_epochs:
@@ -87,39 +115,18 @@ class ForceConsensus:
                 'Force completing consensus for projects: {}', projects,
             )
 
+            txn_tasks = []
             for epochId in epochs_to_process:
                 for project in projects:
-                    if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
-                        project, epochId,
-                    ).call():
-                        try:
-                            tx_hash = write_transaction(
-                                settings.anchor_chain_rpc.validator_consensus_address,
-                                settings.anchor_chain_rpc.validator_consensus_private_key,
-                                protocol_state_contract,
-                                'forceCompleteConsensusSnapshot',
-                                self.nonce,
-                                project,
-                                epochId,
-                            )
-                            self.nonce += 1
-                            self._logger.info(
-                                'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
-                            )
-                        except Exception as ex:
-                            self._logger.error(
-                                'Unable to force complete consensus for project: {}, error: {}', project, ex,
-                            )
-                            # sleep for 30 seconds to avoid nonce collision
-                            time.sleep(30)
-                            # reset nonce
-                            self.nonce = w3.eth.getTransactionCount(
-                                settings.anchor_chain_rpc.validator_consensus_address,
-                            )
-                    else:
-                        self._logger.info(
-                            'Consensus already achieved for project: {}', project,
-                        )
+                    txn_tasks.append(self._call_force_complete_consensus(project, epochId))
+
+            results = await asyncio.gather(*txn_tasks, return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, Exception):
+                    self._logger.error(
+                        'Error while force completing consensus: {}', result,
+                    )
 
     def _fetch_epoch_from_contract(self) -> int:
         last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
@@ -140,6 +147,9 @@ class ForceConsensus:
 
     async def run(self):
         await self.setup()
+
+        if self._submission_window == 0:
+            self._submission_window = protocol_state_contract.functions.snapshotSubmissionWindow().call()
 
         begin_block_epoch = settings.ticker_begin_block if settings.ticker_begin_block else 0
 
@@ -171,7 +181,7 @@ class ForceConsensus:
                     ex,
                     settings.chain.epoch.block_time,
                 )
-                sleep(settings.chain.epoch.block_time)
+                await asyncio.sleep(settings.chain.epoch.block_time)
                 continue
             else:
                 self._logger.debug('Got current head of chain: {}', cur_block)
@@ -184,7 +194,7 @@ class ForceConsensus:
                     self._logger.debug(
                         'Sleeping for: {} seconds', settings.chain.epoch.block_time,
                     )
-                    sleep(settings.chain.epoch.block_time)
+                    await asyncio.sleep(settings.chain.epoch.block_time)
                 else:
 
                     end_block_epoch = cur_block - settings.chain.epoch.head_offset
@@ -198,7 +208,7 @@ class ForceConsensus:
                             end_block_epoch, begin_block_epoch, end_block_epoch,
                             sleep_factor * settings.chain.epoch.block_time, sleep_factor,
                         )
-                        time.sleep(
+                        await asyncio.sleep(
                             sleep_factor *
                             settings.chain.epoch.block_time,
                         )
@@ -225,14 +235,17 @@ class ForceConsensus:
                             self._logger.error('Only epoch of length 1 is supported')
                             return
                         self._pending_epochs.add((time.time(), epoch_block['end']))
-                        await self._force_complete_consensus()
-                        sleep(sleep_secs_between_chunks)
+
+                        asyncio.create_task(self._force_complete_consensus())
+                        await asyncio.sleep(sleep_secs_between_chunks)
 
 
 def main():
     """Spin up the ticker process in event loop"""
-    ticker_process = ForceConsensus()
-    asyncio.get_event_loop().run_until_complete(ticker_process.run())
+    loop = uvloop.new_event_loop()
+    asyncio.set_event_loop(loop)
+    force_consensus_process = ForceConsensus()
+    loop.run_until_complete(force_consensus_process.run())
 
 
 if __name__ == '__main__':

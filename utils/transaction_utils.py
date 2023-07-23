@@ -1,17 +1,13 @@
-from web3 import Web3
-
 from settings.conf import settings
-
-
-w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
 
 CHAIN_ID = settings.anchor_chain_rpc.chain_id
 
 
-def write_transaction(address, private_key, contract, function, nonce, *args):
+def write_transaction(w3, address, private_key, contract, function, nonce, *args):
     """ Writes a transaction to the blockchain
 
     Args:
+            w3 (web3.Web3): Web3 object
             address (str): The address of the account
             private_key (str): The private key of the account
             contract (web3.eth.contract): Web3 contract object
@@ -41,10 +37,11 @@ def write_transaction(address, private_key, contract, function, nonce, *args):
     return tx_hash.hex()
 
 
-def write_transaction_with_receipt(address, private_key, contract, function, nonce, *args):
+def write_transaction_with_receipt(w3, address, private_key, contract, function, nonce, *args):
     """ Writes a transaction using write_transaction, wait for confirmation and retry doubling gas price if failed
 
     Args:
+        w3 (web3): Web3 object
         address (str): The address of the account
         private_key (str): The private key of the account
         contract (web3.eth.contract): Web3 contract object

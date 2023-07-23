@@ -30,7 +30,7 @@ from utils.rate_limiter import load_rate_limiter_scripts
 from utils.redis_conn import RedisPool
 
 service_logger = logger.bind(
-    service='PowerLoom|OffChainConsensus|ServiceEntry',
+    service='PowerLoom|OnChainConsensus|ServiceEntry',
 )
 
 

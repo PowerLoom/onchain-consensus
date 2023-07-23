@@ -21,11 +21,11 @@ from helpers.redis_keys import get_epoch_generator_epoch_history
 from helpers.redis_keys import get_epoch_generator_last_epoch
 from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
+from utils.chunk_helper import chunks
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 from utils.transaction_utils import write_transaction_with_receipt
-
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
 # load abi from json file and create contract object
@@ -35,18 +35,6 @@ w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
 protocol_state_contract = w3.eth.contract(
     address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
 )
-
-
-def chunks(start_idx, stop_idx, n):
-    run_idx = 0
-    for i in range(start_idx, stop_idx + 1, n):
-        # Create an index range for l of n items:
-        begin_idx = i  # if run_idx == 0 else i+1
-        if begin_idx == stop_idx + 1:
-            return
-        end_idx = i + n - 1 if i + n - 1 <= stop_idx else stop_idx
-        run_idx += 1
-        yield begin_idx, end_idx, run_idx
 
 
 def redis_cleanup(fn):
@@ -78,7 +66,7 @@ class EpochGenerator:
     _reader_redis_pool: aioredis.Redis
     _writer_redis_pool: aioredis.Redis
 
-    def __init__(self, name='PowerLoom|OffChainConsensus|EpochGenerator', simulation_mode=False):
+    def __init__(self, name='PowerLoom|OnChainConsensus|EpochGenerator', simulation_mode=False):
         self.name = name
         setproctitle(self.name)
         self._logger = logger.bind(module=self.name)
@@ -210,6 +198,7 @@ class EpochGenerator:
                             rand = random.random()
                             if rand < 0.1:
                                 tx_hash, receipt = write_transaction_with_receipt(
+                                    w3,
                                     settings.anchor_chain_rpc.validator_epoch_address,
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
@@ -237,6 +226,7 @@ class EpochGenerator:
 
                             else:
                                 tx_hash = write_transaction(
+                                    w3,
                                     settings.anchor_chain_rpc.validator_epoch_address,
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
