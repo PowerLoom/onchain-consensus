@@ -9,8 +9,8 @@ from signal import SIGINT
 from signal import signal
 from signal import SIGQUIT
 from signal import SIGTERM
-from time import sleep
 
+import uvloop
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
 from web3 import AsyncHTTPProvider
@@ -147,7 +147,7 @@ class EpochGenerator:
                     ex,
                     settings.chain.epoch.block_time,
                 )
-                sleep(settings.chain.epoch.block_time)
+                await asyncio.sleep(settings.chain.epoch.block_time)
                 continue
             else:
                 self._logger.debug('Got current head of chain: {}', cur_block)
@@ -160,7 +160,7 @@ class EpochGenerator:
                     self._logger.debug(
                         'Sleeping for: {} seconds', settings.chain.epoch.block_time,
                     )
-                    sleep(settings.chain.epoch.block_time)
+                    await asyncio.sleep(settings.chain.epoch.block_time)
                 else:
                     # self._logger.debug('Picked begin of epoch: {}', begin_block_epoch)
                     end_block_epoch = cur_block - settings.chain.epoch.head_offset
@@ -174,7 +174,7 @@ class EpochGenerator:
                             end_block_epoch, begin_block_epoch, end_block_epoch,
                             sleep_factor * settings.chain.epoch.block_time, sleep_factor,
                         )
-                        time.sleep(
+                        await asyncio.sleep(
                             sleep_factor *
                             settings.chain.epoch.block_time,
                         )
@@ -217,7 +217,7 @@ class EpochGenerator:
                                         'Unable to release epoch, error: {}', receipt['status'],
                                     )
                                     # sleep for 30 seconds to avoid nonce collision
-                                    time.sleep(30)
+                                    await asyncio.sleep(30)
                                     # reset nonce
                                     self.nonce = await w3.eth.get_transaction_count(
                                         settings.anchor_chain_rpc.validator_epoch_address,
@@ -250,7 +250,7 @@ class EpochGenerator:
                                 'Unable to release epoch, error: {}', ex,
                             )
                             # sleep for 30 seconds to avoid nonce collision
-                            time.sleep(30)
+                            await asyncio.sleep(30)
                             # reset nonce
                             self.nonce = await w3.eth.get_transaction_count(
                                 settings.anchor_chain_rpc.validator_epoch_address,
@@ -290,15 +290,18 @@ class EpochGenerator:
                             'Waiting to push next epoch in {} seconds...', sleep_secs_between_chunks,
                         )
                         # fixed wait
-                        sleep(sleep_secs_between_chunks)
+                        await asyncio.sleep(sleep_secs_between_chunks)
                     else:
                         begin_block_epoch = end_block_epoch + 1
 
 
 def main():
     """Spin up the ticker process in event loop"""
+    loop = uvloop.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     ticker_process = EpochGenerator()
-    asyncio.get_event_loop().run_until_complete(ticker_process.run())
+    loop.run_until_complete(ticker_process.run())
 
 
 if __name__ == '__main__':
