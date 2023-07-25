@@ -58,7 +58,7 @@ class ForceConsensus:
             self._rwlock = aiorwlock.RWLock()
 
         self.nonce = await w3.eth.get_transaction_count(
-            settings.anchor_chain_rpc.validator_consensus_address,
+            settings.anchor_chain_rpc.force_consensus_address,
         )
 
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
@@ -76,8 +76,8 @@ class ForceConsensus:
                     async with self._rwlock.writer_lock:
                         tx_hash = await write_transaction(
                             w3,
-                            settings.anchor_chain_rpc.validator_consensus_address,
-                            settings.anchor_chain_rpc.validator_consensus_private_key,
+                            settings.anchor_chain_rpc.force_consensus_address,
+                            settings.anchor_chain_rpc.force_consensus_private_key,
                             protocol_state_contract,
                             'forceCompleteConsensusSnapshot',
                             self.nonce,
@@ -97,7 +97,7 @@ class ForceConsensus:
                         # sleep for 5 seconds to avoid nonce collision
                         await asyncio.sleep(5)
                         self.nonce = await w3.eth.get_transaction_count(
-                            settings.anchor_chain_rpc.validator_consensus_address,
+                            settings.anchor_chain_rpc.force_consensus_address,
                         )
             else:
                 self._logger.info(

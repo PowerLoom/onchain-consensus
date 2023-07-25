@@ -63,8 +63,8 @@ class AnchorRPCConfig(BaseModel):
     protocol_state_address: str
     validator_epoch_address: str
     validator_epoch_private_key: str
-    validator_consensus_address: str
-    validator_consensus_private_key: str
+    force_consensus_address: str
+    force_consensus_private_key: str
     request_time_out: int
 
 
