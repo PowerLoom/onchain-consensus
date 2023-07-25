@@ -76,12 +76,11 @@ class EpochGenerator:
         self._shutdown_initiated = False
         self.last_sent_block = 0
         self._end = None
-        self.nonce = -1
-        self.epochId = 1
+        self._nonce = -1
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
-        self.nonce = await w3.eth.get_transaction_count(
+        self._nonce = await w3.eth.get_transaction_count(
             settings.anchor_chain_rpc.validator_epoch_address,
         )
         await self._aioredis_pool.populate()
@@ -103,7 +102,6 @@ class EpochGenerator:
                 ],
             )
             begin_block_epoch = last_epoch_data[1] + 1
-            self.epochId = last_epoch_data[2]
             return begin_block_epoch
         else:
             self._logger.debug(
@@ -207,7 +205,7 @@ class EpochGenerator:
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
-                                    self.nonce,
+                                    self._nonce,
                                     epoch_block['begin'],
                                     epoch_block['end'],
                                 )
@@ -219,7 +217,7 @@ class EpochGenerator:
                                     # sleep for 30 seconds to avoid nonce collision
                                     await asyncio.sleep(30)
                                     # reset nonce
-                                    self.nonce = await w3.eth.get_transaction_count(
+                                    self._nonce = await w3.eth.get_transaction_count(
                                         settings.anchor_chain_rpc.validator_epoch_address,
                                     )
 
@@ -235,13 +233,12 @@ class EpochGenerator:
                                     settings.anchor_chain_rpc.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
-                                    self.nonce,
+                                    self._nonce,
                                     epoch_block['begin'],
                                     epoch_block['end'],
                                 )
 
-                            self.nonce += 1
-                            self.epochId += 1
+                            self._nonce += 1
                             self._logger.debug(
                                 'Epoch Released! Transaction hash: {}', tx_hash,
                             )
@@ -252,7 +249,7 @@ class EpochGenerator:
                             # sleep for 30 seconds to avoid nonce collision
                             await asyncio.sleep(30)
                             # reset nonce
-                            self.nonce = await w3.eth.get_transaction_count(
+                            self._nonce = await w3.eth.get_transaction_count(
                                 settings.anchor_chain_rpc.validator_epoch_address,
                             )
 

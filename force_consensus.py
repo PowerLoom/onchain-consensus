@@ -46,18 +46,18 @@ class ForceConsensus:
         self.last_sent_block = 0
         self._end = None
         self._rwlock = None
-        self.epochId = 1
+        self._epochId = 1
         self._pending_epochs = set()
         self._submission_window = 0
         self._semaphore = asyncio.Semaphore(value=20)
-        self.nonce = -1
+        self._nonce = -1
 
     async def setup(self):
 
         if not self._rwlock:
             self._rwlock = aiorwlock.RWLock()
 
-        self.nonce = await w3.eth.get_transaction_count(
+        self._nonce = await w3.eth.get_transaction_count(
             settings.anchor_chain_rpc.force_consensus_address,
         )
 
@@ -80,11 +80,11 @@ class ForceConsensus:
                             settings.anchor_chain_rpc.force_consensus_private_key,
                             protocol_state_contract,
                             'forceCompleteConsensusSnapshot',
-                            self.nonce,
+                            self._nonce,
                             project,
                             epochId,
                         )
-                        self.nonce += 1
+                        self._nonce += 1
                     self._logger.info(
                         'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
                     )
@@ -96,7 +96,7 @@ class ForceConsensus:
                     async with self._rwlock.writer_lock:
                         # sleep for 5 seconds to avoid nonce collision
                         await asyncio.sleep(5)
-                        self.nonce = await w3.eth.get_transaction_count(
+                        self._nonce = await w3.eth.get_transaction_count(
                             settings.anchor_chain_rpc.force_consensus_address,
                         )
             else:
@@ -144,7 +144,7 @@ class ForceConsensus:
                 ],
             )
             begin_block_epoch = last_epoch_data[1] + 1
-            self.epochId = last_epoch_data[2]
+            self._epochId = last_epoch_data[2]
             return begin_block_epoch
         else:
             self._logger.debug(
@@ -237,11 +237,13 @@ class ForceConsensus:
                         self._logger.debug(
                             'Epoch of sufficient length found: {}', epoch_block,
                         )
-
-                        if epoch_block['end'] != epoch_block['begin']:
-                            self._logger.error('Only epoch of length 1 is supported')
-                            return
-                        self._pending_epochs.add((time.time(), epoch_block['end']))
+                        # for 1 epoch size epochId is same as block number
+                        if epoch_block['begin'] == epoch_block['end']:
+                            self._pending_epochs.add((time.time(), epoch_block['end']))
+                        else:
+                            # using internal epochId counter otherwise
+                            self._pending_epochs.add((time.time(), self._epochId))
+                        self._epochId += 1
 
                         asyncio.create_task(self._force_complete_consensus())
                         await asyncio.sleep(sleep_secs_between_chunks)
