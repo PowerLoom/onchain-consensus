@@ -165,7 +165,7 @@ class ForceConsensus:
             begin_block_epoch = last_contract_epoch
 
         # waiting to release epoch chunks every half of block time
-        sleep_secs_between_chunks = settings.chain.epoch.block_time // 4
+        sleep_secs_between_chunks = self._submission_window // 2
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
@@ -206,18 +206,18 @@ class ForceConsensus:
 
                     end_block_epoch = cur_block - settings.chain.epoch.head_offset
                     if not (end_block_epoch - begin_block_epoch + 1) >= settings.chain.epoch.height:
-                        sleep_factor = settings.chain.epoch.height - \
-                            ((end_block_epoch - begin_block_epoch) + 1)
                         self._logger.debug(
                             'Current head of source chain estimated at block {} after offsetting | '
                             '{} - {} does not satisfy configured epoch length. '
-                            'Sleeping for {} seconds for {} blocks to accumulate....',
+                            'Sleeping for {} seconds after forcing consensus for pending epochs.',
                             end_block_epoch, begin_block_epoch, end_block_epoch,
-                            sleep_factor * settings.chain.epoch.block_time, sleep_factor,
+                            sleep_secs_between_chunks,
                         )
+                        # force complete consensus if epoch size > 2.5 times of submission window
+                        asyncio.create_task(self._force_complete_consensus())
+
                         await asyncio.sleep(
-                            sleep_factor *
-                            settings.chain.epoch.block_time,
+                            sleep_secs_between_chunks,
                         )
                         continue
                     self._logger.debug(
@@ -244,7 +244,7 @@ class ForceConsensus:
                             # using internal epochId counter otherwise
                             self._pending_epochs.add((time.time(), self._epochId))
                         self._epochId += 1
-
+                        # force complete consensus when epoch is released
                         asyncio.create_task(self._force_complete_consensus())
                         await asyncio.sleep(sleep_secs_between_chunks)
 
