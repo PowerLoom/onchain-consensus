@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import threading
 import time
 from functools import wraps
@@ -8,11 +9,12 @@ from signal import SIGINT
 from signal import signal
 from signal import SIGQUIT
 from signal import SIGTERM
-from time import sleep
 
+import uvloop
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
-from web3 import Web3
+from web3 import AsyncHTTPProvider
+from web3 import AsyncWeb3
 
 from exceptions import GenericExitOnSignal
 from helpers.message_models import RPCNodesObject
@@ -20,31 +22,22 @@ from helpers.redis_keys import get_epoch_generator_epoch_history
 from helpers.redis_keys import get_epoch_generator_last_epoch
 from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
+from utils.chunk_helper import chunks
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
+from utils.transaction_utils import write_transaction_with_receipt
 
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
 
 # load abi from json file and create contract object
 with open('utils/static/abi.json', 'r') as f:
     abi = json.load(f)
-w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+
+w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
 protocol_state_contract = w3.eth.contract(
     address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
 )
-
-
-def chunks(start_idx, stop_idx, n):
-    run_idx = 0
-    for i in range(start_idx, stop_idx + 1, n):
-        # Create an index range for l of n items:
-        begin_idx = i  # if run_idx == 0 else i+1
-        if begin_idx == stop_idx + 1:
-            return
-        end_idx = i + n - 1 if i + n - 1 <= stop_idx else stop_idx
-        run_idx += 1
-        yield begin_idx, end_idx, run_idx
 
 
 def redis_cleanup(fn):
@@ -76,20 +69,20 @@ class EpochGenerator:
     _reader_redis_pool: aioredis.Redis
     _writer_redis_pool: aioredis.Redis
 
-    def __init__(self, name='PowerLoom|OffChainConsensus|EpochGenerator', simulation_mode=False):
+    def __init__(self, name='PowerLoom|OnChainConsensus|EpochGenerator', simulation_mode=False):
         self.name = name
         setproctitle(self.name)
         self._logger = logger.bind(module=self.name)
         self._shutdown_initiated = False
         self.last_sent_block = 0
         self._end = None
-        self.nonce = w3.eth.getTransactionCount(
-            settings.anchor_chain_rpc.validator_address,
-        )
-        self.epochId = 1
+        self._nonce = -1
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
+        self._nonce = await w3.eth.get_transaction_count(
+            settings.anchor_chain_rpc.validator_epoch_address,
+        )
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
@@ -100,8 +93,8 @@ class EpochGenerator:
             self._shutdown_initiated = True
             raise GenericExitOnSignal
 
-    def _fetch_epoch_from_contract(self) -> int:
-        last_epoch_data = protocol_state_contract.functions.currentEpoch().call()
+    async def _fetch_epoch_from_contract(self) -> int:
+        last_epoch_data = await protocol_state_contract.functions.currentEpoch().call()
         if last_epoch_data[1]:
             self._logger.debug(
                 'Found last epoch block : {} in contract. Starting from checkpoint.', last_epoch_data[
@@ -109,7 +102,6 @@ class EpochGenerator:
                 ],
             )
             begin_block_epoch = last_epoch_data[1] + 1
-            self.epochId = last_epoch_data[2]
             return begin_block_epoch
         else:
             self._logger.debug(
@@ -125,11 +117,12 @@ class EpochGenerator:
         for signame in [SIGINT, SIGTERM, SIGQUIT]:
             signal(signame, self._generic_exit_handler)
 
-        last_contract_epoch = self._fetch_epoch_from_contract()
+        last_contract_epoch = await self._fetch_epoch_from_contract()
         if last_contract_epoch != -1:
             begin_block_epoch = last_contract_epoch
 
-        sleep_secs_between_chunks = 60
+        # waiting to release epoch chunks every half of block time
+        sleep_secs_between_chunks = settings.chain.epoch.block_time // 2
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
@@ -152,7 +145,7 @@ class EpochGenerator:
                     ex,
                     settings.chain.epoch.block_time,
                 )
-                sleep(settings.chain.epoch.block_time)
+                await asyncio.sleep(settings.chain.epoch.block_time)
                 continue
             else:
                 self._logger.debug('Got current head of chain: {}', cur_block)
@@ -165,7 +158,7 @@ class EpochGenerator:
                     self._logger.debug(
                         'Sleeping for: {} seconds', settings.chain.epoch.block_time,
                     )
-                    sleep(settings.chain.epoch.block_time)
+                    await asyncio.sleep(settings.chain.epoch.block_time)
                 else:
                     # self._logger.debug('Picked begin of epoch: {}', begin_block_epoch)
                     end_block_epoch = cur_block - settings.chain.epoch.head_offset
@@ -179,7 +172,7 @@ class EpochGenerator:
                             end_block_epoch, begin_block_epoch, end_block_epoch,
                             sleep_factor * settings.chain.epoch.block_time, sleep_factor,
                         )
-                        time.sleep(
+                        await asyncio.sleep(
                             sleep_factor *
                             settings.chain.epoch.block_time,
                         )
@@ -202,59 +195,50 @@ class EpochGenerator:
                             'Epoch of sufficient length found: {}', epoch_block,
                         )
 
-                        projects = protocol_state_contract.functions.getProjects().call()
+                        try:
+                            self._logger.info('Attempting to release epoch {}', epoch_block)
+                            rand = random.random()
+                            if rand < 0.1:
+                                tx_hash, receipt = await write_transaction_with_receipt(
+                                    w3,
+                                    settings.anchor_chain_rpc.validator_epoch_address,
+                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    protocol_state_contract,
+                                    'releaseEpoch',
+                                    self._nonce,
+                                    epoch_block['begin'],
+                                    epoch_block['end'],
+                                )
 
-                        self._logger.info(
-                            'Force completing consensus for projects: {}', projects,
-                        )
-                        for project in projects:
-                            if protocol_state_contract.functions.checkDynamicConsensusSnapshot(
-                                project, self.epochId,
-                            ).call():
-                                try:
-                                    tx_hash = write_transaction(
-                                        settings.anchor_chain_rpc.validator_address,
-                                        settings.anchor_chain_rpc.validator_private_key,
-                                        protocol_state_contract,
-                                        'forceCompleteConsensusSnapshot',
-                                        self.nonce,
-                                        project,
-                                        self.epochId,
-                                    )
-                                    self.nonce += 1
-                                    self._logger.info(
-                                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
-                                    )
-                                except Exception as ex:
+                                if receipt['status'] != 1:
                                     self._logger.error(
-                                        'Unable to force complete consensus for project: {}, error: {}', project, ex,
+                                        'Unable to release epoch, error: {}', receipt['status'],
                                     )
-                                    # sleep for 60 seconds to avoid nonce collision
-                                    time.sleep(60)
+                                    # sleep for 30 seconds to avoid nonce collision
+                                    await asyncio.sleep(30)
                                     # reset nonce
-                                    self.nonce = w3.eth.getTransactionCount(
-                                        settings.anchor_chain_rpc.validator_address,
+                                    self._nonce = await w3.eth.get_transaction_count(
+                                        settings.anchor_chain_rpc.validator_epoch_address,
                                     )
 
-                                    last_contract_epoch = self._fetch_epoch_from_contract()
+                                    last_contract_epoch = await self._fetch_epoch_from_contract()
                                     if last_contract_epoch != -1:
                                         begin_block_epoch = last_contract_epoch
+                                    continue
+
                             else:
-                                self._logger.info(
-                                    'Consensus already achieved for project: {}', project,
+                                tx_hash = await write_transaction(
+                                    w3,
+                                    settings.anchor_chain_rpc.validator_epoch_address,
+                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    protocol_state_contract,
+                                    'releaseEpoch',
+                                    self._nonce,
+                                    epoch_block['begin'],
+                                    epoch_block['end'],
                                 )
-                        try:
-                            tx_hash = write_transaction(
-                                settings.anchor_chain_rpc.validator_address,
-                                settings.anchor_chain_rpc.validator_private_key,
-                                protocol_state_contract,
-                                'releaseEpoch',
-                                self.nonce,
-                                epoch_block['begin'],
-                                epoch_block['end'],
-                            )
-                            self.nonce += 1
-                            self.epochId += 1
+
+                            self._nonce += 1
                             self._logger.debug(
                                 'Epoch Released! Transaction hash: {}', tx_hash,
                             )
@@ -262,14 +246,14 @@ class EpochGenerator:
                             self._logger.error(
                                 'Unable to release epoch, error: {}', ex,
                             )
-                            # sleep for 60 seconds to avoid nonce collision
-                            time.sleep(60)
+                            # sleep for 30 seconds to avoid nonce collision
+                            await asyncio.sleep(30)
                             # reset nonce
-                            self.nonce = w3.eth.getTransactionCount(
-                                settings.anchor_chain_rpc.validator_address,
+                            self._nonce = await w3.eth.get_transaction_count(
+                                settings.anchor_chain_rpc.validator_epoch_address,
                             )
 
-                            last_contract_epoch = self._fetch_epoch_from_contract()
+                            last_contract_epoch = await self._fetch_epoch_from_contract()
                             if last_contract_epoch != -1:
                                 begin_block_epoch = last_contract_epoch
 
@@ -303,15 +287,18 @@ class EpochGenerator:
                             'Waiting to push next epoch in {} seconds...', sleep_secs_between_chunks,
                         )
                         # fixed wait
-                        sleep(sleep_secs_between_chunks)
+                        await asyncio.sleep(sleep_secs_between_chunks)
                     else:
                         begin_block_epoch = end_block_epoch + 1
 
 
 def main():
     """Spin up the ticker process in event loop"""
+    loop = uvloop.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     ticker_process = EpochGenerator()
-    asyncio.get_event_loop().run_until_complete(ticker_process.run())
+    loop.run_until_complete(ticker_process.run())
 
 
 if __name__ == '__main__':

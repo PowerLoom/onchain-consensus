@@ -1,17 +1,12 @@
-from web3 import Web3
-
 from settings.conf import settings
-
-
-w3 = Web3(Web3.HTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
-
 CHAIN_ID = settings.anchor_chain_rpc.chain_id
 
 
-def write_transaction(address, private_key, contract, function, nonce, *args):
+async def write_transaction(w3, address, private_key, contract, function, nonce, *args):
     """ Writes a transaction to the blockchain
 
     Args:
+            w3 (web3.Web3): Web3 object
             address (str): The address of the account
             private_key (str): The private key of the account
             contract (web3.eth.contract): Web3 contract object
@@ -24,10 +19,10 @@ def write_transaction(address, private_key, contract, function, nonce, *args):
     # Create the function
     func = getattr(contract.functions, function)
     # Get the transaction
-    transaction = func(*args).buildTransaction({
+    transaction = await func(*args).build_transaction({
         'from': address,
         'gas': 2000000,
-        'gasPrice': w3.toWei('0.0001', 'gwei'),
+        'gasPrice': w3.to_wei('0.0001', 'gwei'),
         'nonce': nonce,
         'chainId': CHAIN_ID,
     })
@@ -36,15 +31,16 @@ def write_transaction(address, private_key, contract, function, nonce, *args):
         transaction, private_key=private_key,
     )
     # Send the transaction
-    tx_hash = w3.eth.send_raw_transaction(signed_transaction.rawTransaction)
+    tx_hash = await w3.eth.send_raw_transaction(signed_transaction.rawTransaction)
     # Wait for confirmation
     return tx_hash.hex()
 
 
-def write_transaction_with_receipt(address, private_key, contract, function, nonce, *args):
+async def write_transaction_with_receipt(w3, address, private_key, contract, function, nonce, *args):
     """ Writes a transaction using write_transaction, wait for confirmation and retry doubling gas price if failed
 
     Args:
+        w3 (web3): Web3 object
         address (str): The address of the account
         private_key (str): The private key of the account
         contract (web3.eth.contract): Web3 contract object
@@ -54,10 +50,10 @@ def write_transaction_with_receipt(address, private_key, contract, function, non
     Returns:
         str: The transaction hash
     """
-    tx_hash = write_transaction(
-        address, private_key, contract, function, nonce, *args,
+    tx_hash = await write_transaction(
+        w3, address, private_key, contract, function, nonce, *args,
     )
 
     # Wait for confirmation
-    receipt = w3.eth.waitForTransactionReceipt(tx_hash)
+    receipt = await w3.eth.wait_for_transaction_receipt(tx_hash)
     return tx_hash, receipt

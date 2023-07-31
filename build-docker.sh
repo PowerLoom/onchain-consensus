@@ -1,1 +1,1 @@
-docker build -t powerloom-offchain-consensus .
+docker build -t powerloom-onchain-consensus .

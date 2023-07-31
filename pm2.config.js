@@ -20,7 +20,16 @@ module.exports = {
       }
     },
     {
-      name   : "off-chain-consensus",
+      name   : "force-consensus",
+      script : `poetry run python -m force_consensus`,
+      max_restarts: MAX_RESTART,
+      min_uptime: MIN_UPTIME,
+      env: {
+        NODE_ENV: NODE_ENV,
+      }
+    },
+    {
+      name   : "stats-api",
       script: `poetry run python -m gunicorn_main_launcher`,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,

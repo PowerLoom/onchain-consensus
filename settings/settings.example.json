@@ -38,8 +38,10 @@
 		}],
 		"chain_id": 11155111,
 		"protocol_state_address": "0x000000",
-		"validator_address": "0x000000",
-		"validator_private_key": "0x000000",
+		"validator_epoch_address": "0x000000",
+		"validator_epoch_private_key": "0x000000",
+		"force_consensus_address": "0x000000",
+		"force_consensus_private_key": "0x000000",
 		"retry": 5,
 		"request_time_out": 5
 	},

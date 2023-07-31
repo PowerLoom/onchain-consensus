@@ -1,0 +1,50 @@
+@startuml
+
+Main --> EpochGenerator : Start
+
+EpochGenerator --> RedisPool : setup()
+EpochGenerator --> ConstructRPC : rpc_obj
+
+loop
+    EpochGenerator --> rpc_obj : rpc_eth_blocknumber()
+    rpc_obj --> EpochGenerator : current head of chain (cur_block)
+
+    alt begin_block_epoch not set
+        EpochGenerator --> EpochGenerator : Set begin_block_epoch to current head of chain
+        EpochGenerator --> EpochGenerator : Sleep for block time
+    else begin_block_epoch set
+        EpochGenerator --> EpochGenerator : Calculate end_block_epoch (current_block - buffer)
+        alt epoch length not satisfied
+            EpochGenerator --> EpochGenerator : Sleep to accumulate blocks
+        else epoch length satisfied
+            EpochGenerator --> EpochGenerator : Chunk blocks between begin_block_epoch and end_block_epoch
+
+            alt randomly 10% of the time
+                EpochGenerator --> ProtocolStateContract : write epoch release transaction and wait for receipt
+                ProtocolStateContract --> EpochGenerator : Transaction receipt
+                alt transaction failed
+                    EpochGenerator --> EpochGenerator : Sleep for 30 seconds, then reset nonce and epoch head
+                else transaction succeeded
+                    EpochGenerator --> EpochGenerator : Increment nonce
+                end
+            else 90% of the time
+                EpochGenerator --> ProtocolStateContract : write epoch release transaction
+                EpochGenerator --> EpochGenerator : Increment nonce
+            end
+            EpochGenerator --> RedisPool : Set last_sent_block and epoch history, and cleanup
+
+        end
+    end
+end
+
+note right
+    Check for shutdown signals
+end note
+
+alt shutdown signal received
+    EpochGenerator --> RedisPool : Cleanup and Save State
+    EpochGenerator --> Main : Shutdown
+end
+
+
+@enduml
