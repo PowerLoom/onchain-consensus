@@ -2,12 +2,18 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Setup](#setup)
-- [Development Instructions](#development-instructions)
-- [Monitoring and Debugging](#monitoring-and-debugging)
-- [Epoch Generation](#epoch-generation)
-- [Running just Consensus service using Docker](#running-just-consensus-service-using-docker)
+- [Onchain Consensus](#onchain-consensus)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Setup](#setup)
+  - [Development Instructions](#development-instructions)
+    - [Generate Config](#generate-config)
+      - [Configuring settings.json](#configuring-settingsjson)
+  - [Monitoring and Debugging](#monitoring-and-debugging)
+  - [Epoch Generation](#epoch-generation)
+  - [Force Consensus](#force-consensus)
+  - [Running just Consensus service using Docker](#running-just-consensus-service-using-docker)
+    - [Consensus Dashboard](#consensus-dashboard)
 
 ## Overview
 
@@ -15,7 +21,7 @@
 Onchain Consensus is part of the *Admin Module* in the overall architecture. It currently serves the following important roles -
 
 1. Maintains and releases `Epoch` depending on chain and use case configuration
-2. Checks and completes consensus (if necessary) by interacting with the Protocol State contract for the previous Epoch before the next Epoch is released
+2. Checks and completes consensus (if necessary) by interacting with the Protocol State contract for previously released epochs after the submission window has passed
 3. Provides a set of APIs for metrics and system state statistics where snapshotters can report their issues and overall network health can be monitored
 
 ## Setup
@@ -36,8 +42,10 @@ There are a lot of configurations in the `settings.json` file, most of them are 
 - `ticker_begin_block` is the block from which you want the `epoch_generator` service to start (starts from the current block if set to 0)
 - `anchor_chain_rpc.url` is the RPC URL for Prost Chain where the protocol state lives
 - `anchor_chain_rpc.protcol_state_address` is the Protocol State contract address with which `EpochGenerator` interacts and releases Epochs
-- `anchor_chain_rpc.validator_address` is the EVM account address for the validator this is releasing/finalizing Epochs
-- `anchor_chain_rpc.validator_private_key` is the validator EVM account address private key
+- `anchor_chain_rpc.validator_epoch_address` is the EVM account address for the validator this is releasing/finalizing Epochs
+- `anchor_chain_rpc.validator_epoch_private_key` is the validator EVM account address private key
+- `anchor_chain_rpc.force_consensus_address` is the account address for the force consensus service, this doesn't need to be a validator account
+- `anchor_chain_rpc.force_consensus_private_key` is the private key for the force consensus account
 
 ## Monitoring and Debugging
 
@@ -62,7 +70,18 @@ The size of an epoch is configurable. Let that be referred to as `size(E)`.
 
  and then publishes an epoch `(h₁, h₂)` so that `h₂ - h₁ + 1 == size(E)`. The next epoch, therefore, is tracked from `h₂ + 1`.
 
+The Epoch Release process is explained in detail in the sequence diagram below
+![Epoch Generator Sequence Diagram](/docs/images/epoch_generator.png)
 
+## Force Consensus
+
+Force consensus is an optional mechanism that can be run by anyone in the network and is designed to trigger consensus checks for projects that didn't reach consensus automatically with a 51% majority within the submission window. This will force consensus if possible if the project submissions meet all internal criteria for consensus after the submission window is closed.
+
+Force Consensus works slightly differently than Epoch Generator and is heavily optimized to handle a lot of projects. The sequence diagram explaining the flow is given below
+![Force Consensus Sequence Diagram](/docs/images/force_consensus.png)
+
+Transaction tasks are then processed parallelly using the following flow
+![Force Consensus Transaction Task Processing](/docs/images/txn_task.png)
 ## Running just Consensus service using Docker
 If you want to deploy consensus service for some reason, you can do so by following the following steps:
 

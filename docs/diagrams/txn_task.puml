@@ -1,0 +1,28 @@
+@startuml
+
+alt transaction_task for project and epochId from TxnTasks
+        ForceConsensus -> Semaphore : Acquire semaphore
+        Semaphore --> ForceConsensus : Semaphore acquired
+
+        ForceConsensus -> ProtocolStateContract : Get project consensus state
+        alt need to call forceConsensus()
+
+            ForceConsensus -> RWLock : Acquire write lock
+            RWLock --> ForceConsensus : Write lock acquired
+
+            ForceConsensus -> ProtocolStateContract : Force consensus
+            alt consensus forced successfully
+                ForceConsensus -> ForceConsensus : Log success message
+            else consensus could not be forced
+                ForceConsensus -> ForceConsensus : Log error message
+                ForceConsensus -> ForceConsensus : Reset Nonce
+            end
+
+            ForceConsensus -> RWLock : Release write lock
+
+        else no need to call forceConsensus()
+
+            ForceConsensus -> ForceConsensus : Log info message
+        end
+end
+@enduml

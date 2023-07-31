@@ -1,0 +1,86 @@
+@startuml Main
+
+Main --> ForceConsensus : Start
+
+ProtocolStateContract --> ForceConsensus : get Submission Window
+ProtocolStateContract --> ForceConsensus : get Current Epoch
+
+ForceConsensus --> ConstructRPC : rpc_obj
+
+loop
+    ForceConsensus --> rpc_obj : rpc_eth_blocknumber()
+    rpc_obj --> ForceConsensus : current head of chain (cur_block)
+
+    alt begin_block_epoch not set
+        ForceConsensus --> ForceConsensus : Set begin_block_epoch to current head of chain
+        ForceConsensus --> ForceConsensus : Sleep for block time
+    else begin_block_epoch set
+        ForceConsensus --> ForceConsensus : Calculate end_block_epoch (current_block - buffer)
+        alt epoch length not satisfied
+            ForceConsensus --> ForceConsensus : Force Complete Consensus for pending epochs
+            ForceConsensus --> ForceConsensus : Sleep to accumulate blocks
+        else epoch length satisfied
+            ForceConsensus --> ForceConsensus : Chunk blocks between begin_block_epoch and end_block_epoch
+            loop for epoch in chunks
+                alt epoch size not sufficient
+                    ForceConsensus --> ForceConsensus : Skipping chunk, reset chunking to begin
+                else epoch size sufficient
+                    ForceConsensus --> ForceConsensus : Epoch of sufficient length found
+
+                    alt single block epoch
+                        ForceConsensus --> PendingEpochs : Add epoch to pending epochs (time, epoch['end'])
+                    else normal epoch
+                        ForceConsensus --> PendingEpochs : Add epoch to pending epochs (time, _epochId)
+                        ForceConsensus --> ForceConsensus : Increment _epochId
+                    end
+
+                    ForceConsensus --> ForceConsensus : Force Complete Consensus for pending epochs
+
+                end
+                ForceConsensus --> ForceConsensus : Sleep before next chunk
+            end
+
+        end
+    end
+
+
+end
+
+note right
+    Check for shutdown signals
+end note
+
+
+alt shutdown signal received
+    ForceConsensus --> ForceConsensus : Cleanup and Save State
+    ForceConsensus --> Main : Shutdown
+end
+
+
+alt Force Complete Consensus for pending epochs
+PendingEpochs --> ForceConsensus : Get pending epochs and filter for epochs that has passed submission window
+
+loop for each epochId in epochs to process
+    loop for each Project in projects
+        ForceConsensus -> TxnTasks : Create transaction task for project and epochId
+    end
+end
+TxnTasks --> ForceConsensus : Transaction tasks
+
+ForceConsensus -> Results : Gather results of forced consensus transactions
+Results --> ForceConsensus : Results of forced consensus
+ForceConsensus --> PendingEpochs : Update pending epochs set
+
+loop for each result in results
+    alt transaction success
+        ForceConsensus -> ForceConsensus : Log success message
+    else transaction failed
+        ForceConsensus -> ForceConsensus : Log error message
+    end
+end
+
+end
+
+note right
+    Force Complete Consensus for pending epochs
+end note

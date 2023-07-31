@@ -29,7 +29,7 @@ module.exports = {
       }
     },
     {
-      name   : "off-chain-consensus",
+      name   : "stats-api",
       script: `poetry run python -m gunicorn_main_launcher`,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,

@@ -1,12 +1,10 @@
 import asyncio
 import json
-import threading
 import time
 from multiprocessing import Process
 
 import aiorwlock
 import uvloop
-from redis import asyncio as aioredis
 from setproctitle import setproctitle
 from web3 import AsyncHTTPProvider
 from web3 import AsyncWeb3
@@ -16,7 +14,6 @@ from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
 from utils.chunk_helper import chunks
 from utils.default_logger import logger
-from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 
 protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
@@ -34,9 +31,6 @@ protocol_state_contract = w3.eth.contract(
 
 
 class ForceConsensus:
-    _aioredis_pool: RedisPool
-    _reader_redis_pool: aioredis.Redis
-    _writer_redis_pool: aioredis.Redis
 
     def __init__(self, name='PowerLoom|OnChainConsensus|ForceConsensus'):
         self.name = name
@@ -60,12 +54,6 @@ class ForceConsensus:
         self._nonce = await w3.eth.get_transaction_count(
             settings.anchor_chain_rpc.force_consensus_address,
         )
-
-        self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
-        await self._aioredis_pool.populate()
-        self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
-        self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
-        self.redis_thread: threading.Thread
 
     async def _call_force_complete_consensus(self, project, epochId):
         async with self._semaphore:
