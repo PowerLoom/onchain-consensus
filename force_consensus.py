@@ -1,8 +1,8 @@
 import asyncio
 import json
+import random
 import threading
 import time
-from multiprocessing import Process
 
 import aiorwlock
 import uvloop
@@ -15,10 +15,10 @@ from helpers.redis_keys import event_detector_last_processed_block
 from rpc import get_event_sig_and_abi
 from rpc import RpcHelper
 from settings.conf import settings
-from utils.chunk_helper import chunks
 from utils.default_logger import logger
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
+from utils.transaction_utils import write_transaction_with_receipt
 
 protocol_state_contract_address = settings.protocol_state_address
 
@@ -115,21 +115,47 @@ class ForceConsensus:
             if await protocol_state_contract.functions.checkDynamicConsensusSnapshot(
                 project, epochId,
             ).call():
+
                 try:
                     async with self._rwlock.writer_lock:
-                        tx_hash = await write_transaction(
-                            w3,
-                            settings.force_consensus_address,
-                            settings.force_consensus_private_key,
-                            protocol_state_contract,
-                            'forceCompleteConsensusSnapshot',
-                            self._nonce,
-                            project,
-                            epochId,
-                        )
-                        self._nonce += 1
+                        rand = random.random()
+                        # check receipt and heal if needed 1% of the time
+                        if rand < 0.01:
+                            tx_hash, receipt = await write_transaction_with_receipt(
+                                w3,
+                                settings.force_consensus_address,
+                                settings.force_consensus_private_key,
+                                protocol_state_contract,
+                                'forceCompleteConsensusSnapshot',
+                                self._nonce,
+                                project,
+                                epochId,
+                            )
+
+                            if receipt['status'] != 1:
+                                self._logger.error(
+                                    'Unable to force complete consensus for project: {}, error: {}',
+                                )
+                                time.sleep(5)
+                                self._nonce = await w3.eth.get_transaction_count(
+                                    settings.force_consensus_address,
+                                )
+                                return
+                        else:
+
+                            tx_hash = await write_transaction(
+                                w3,
+                                settings.force_consensus_address,
+                                settings.force_consensus_private_key,
+                                protocol_state_contract,
+                                'forceCompleteConsensusSnapshot',
+                                self._nonce,
+                                project,
+                                epochId,
+                            )
+                    self._nonce += 1
                     self._logger.info(
-                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
+                        'Force completing consensus for project: {}, epoch: {}, txhash: {}', project, epochId, tx_hash,
                     )
                 except Exception as ex:
                     self._logger.error(
