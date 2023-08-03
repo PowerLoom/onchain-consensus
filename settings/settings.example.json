@@ -24,8 +24,6 @@
 			"force_archive_blocks": 100,
 			"retry": 5,
 			"request_time_out": 5,
-			"skip_epoch_threshold_blocks": 30,
-			"polling_interval": 15,
 			"connection_limits":{
 			  "max_connections": 100,
 			  "max_keepalive_connections": 50,
@@ -34,7 +32,7 @@
 		  },
 		"chain_id":1,
 		"epoch": {
-			"height": 1,
+			"height": 10,
 			"head_offset": 2,
 			"block_time": 12,
 			"history_length": 1000
