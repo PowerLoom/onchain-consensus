@@ -28,15 +28,15 @@ from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 from utils.transaction_utils import write_transaction_with_receipt
 
-protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
+protocol_state_contract_address = settings.protocol_state_address
 
 # load abi from json file and create contract object
 with open('utils/static/abi.json', 'r') as f:
     abi = json.load(f)
 
-w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain.rpc.full_nodes[0].url))
 protocol_state_contract = w3.eth.contract(
-    address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
+    address=settings.protocol_state_address, abi=abi,
 )
 
 
@@ -81,7 +81,7 @@ class EpochGenerator:
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         self._nonce = await w3.eth.get_transaction_count(
-            settings.anchor_chain_rpc.validator_epoch_address,
+            settings.validator_epoch_address,
         )
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
@@ -126,7 +126,7 @@ class EpochGenerator:
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
-        for node in settings.chain.rpc.nodes:
+        for node in settings.chain.rpc.full_nodes:
             self._logger.debug('node {}', node.url)
             rpc_urls.append(node.url)
         rpc_nodes_obj = RPCNodesObject(
@@ -201,8 +201,8 @@ class EpochGenerator:
                             if rand < 0.1:
                                 tx_hash, receipt = await write_transaction_with_receipt(
                                     w3,
-                                    settings.anchor_chain_rpc.validator_epoch_address,
-                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    settings.validator_epoch_address,
+                                    settings.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self._nonce,
@@ -218,7 +218,7 @@ class EpochGenerator:
                                     await asyncio.sleep(30)
                                     # reset nonce
                                     self._nonce = await w3.eth.get_transaction_count(
-                                        settings.anchor_chain_rpc.validator_epoch_address,
+                                        settings.validator_epoch_address,
                                     )
 
                                     last_contract_epoch = await self._fetch_epoch_from_contract()
@@ -229,8 +229,8 @@ class EpochGenerator:
                             else:
                                 tx_hash = await write_transaction(
                                     w3,
-                                    settings.anchor_chain_rpc.validator_epoch_address,
-                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    settings.validator_epoch_address,
+                                    settings.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self._nonce,
@@ -250,7 +250,7 @@ class EpochGenerator:
                             await asyncio.sleep(30)
                             # reset nonce
                             self._nonce = await w3.eth.get_transaction_count(
-                                settings.anchor_chain_rpc.validator_epoch_address,
+                                settings.validator_epoch_address,
                             )
 
                             last_contract_epoch = await self._fetch_epoch_from_contract()

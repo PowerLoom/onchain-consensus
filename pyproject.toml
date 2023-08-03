@@ -27,6 +27,8 @@ aiohttp = "^3.8.4"
 aiorwlock = "^1.3.0"
 uvloop = "^0.17.0"
 web3 = "^6.6.1"
+eth-abi = "^4.1.0"
+eth-utils = "^2.2.0"
 
 
 [build-system]

@@ -9,7 +9,7 @@ from settings.conf import settings
 from utils.default_logger import logger
 
 rpc_logger = logger.bind(module='PowerLoom|OnChainConsensus|RPCHelper')
-REQUEST_TIMEOUT = settings.chain.rpc.request_timeout
+REQUEST_TIMEOUT = settings.chain.rpc.request_time_out
 RETRY_LIMIT = settings.chain.rpc.retry
 
 

@@ -1,5 +1,5 @@
 from settings.conf import settings
-CHAIN_ID = settings.anchor_chain_rpc.chain_id
+CHAIN_ID = settings.anchor_chain.chain_id
 
 
 async def write_transaction(w3, address, private_key, contract, function, nonce, *args):
