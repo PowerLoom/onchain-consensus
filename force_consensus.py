@@ -112,40 +112,33 @@ class ForceConsensus:
 
     async def _call_force_complete_consensus(self, project, epochId):
         async with self._semaphore:
-            if await protocol_state_contract.functions.checkDynamicConsensusSnapshot(
-                project, epochId,
-            ).call():
-                try:
-                    async with self._rwlock.writer_lock:
-                        tx_hash = await write_transaction(
-                            w3,
-                            settings.force_consensus_address,
-                            settings.force_consensus_private_key,
-                            protocol_state_contract,
-                            'forceCompleteConsensusSnapshot',
-                            self._nonce,
-                            project,
-                            epochId,
-                        )
-                        self._nonce += 1
-                    self._logger.info(
-                        'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
+            try:
+                async with self._rwlock.writer_lock:
+                    tx_hash = await write_transaction(
+                        w3,
+                        settings.force_consensus_address,
+                        settings.force_consensus_private_key,
+                        protocol_state_contract,
+                        'forceCompleteConsensusSnapshot',
+                        self._nonce,
+                        project,
+                        epochId,
                     )
-                except Exception as ex:
-                    self._logger.error(
-                        'Unable to force complete consensus for project: {}, error: {}', project, ex,
-                    )
-                    # reset nonce
-                    async with self._rwlock.writer_lock:
-                        # sleep for 5 seconds to avoid nonce collision
-                        await asyncio.sleep(5)
-                        self._nonce = await w3.eth.get_transaction_count(
-                            settings.force_consensus_address,
-                        )
-            else:
+                    self._nonce += 1
                 self._logger.info(
-                    'Consensus already achieved for project: {}', project,
+                    'Force completing consensus for project: {}, txhash: {}', project, tx_hash,
                 )
+            except Exception as ex:
+                self._logger.error(
+                    'Unable to force complete consensus for project: {}, error: {}', project, ex,
+                )
+                # reset nonce
+                async with self._rwlock.writer_lock:
+                    # sleep for 5 seconds to avoid nonce collision
+                    await asyncio.sleep(5)
+                    self._nonce = await w3.eth.get_transaction_count(
+                        settings.force_consensus_address,
+                    )
 
     async def _force_complete_consensus(self):
         epochs_to_process = []
