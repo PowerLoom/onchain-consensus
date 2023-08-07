@@ -90,7 +90,7 @@ class ForceConsensus:
             if log['event'] == 'EpochReleased':
                 self._pending_epochs.add((time.time(), log['args']['epochId']))
 
-        asyncio.create_task(self._force_complete_consensus())
+        asyncio.ensure_future(self._force_complete_consensus())
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
