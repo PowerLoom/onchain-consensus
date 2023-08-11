@@ -57,6 +57,8 @@ class ForceConsensus:
         self._nonce = -1
         self.rpc_helper = RpcHelper(rpc_settings=settings.anchor_chain.rpc)
         self._last_processed_block = 0
+        self._client = None
+        self._async_transport = None
 
         EVENTS_ABI = {
             'EpochReleased': protocol_state_contract.events.EpochReleased._get_event_abi(),

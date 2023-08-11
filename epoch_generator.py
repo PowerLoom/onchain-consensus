@@ -81,6 +81,8 @@ class EpochGenerator:
         self.last_sent_block = 0
         self._end = None
         self._nonce = -1
+        self._async_transport = None
+        self._client = None
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
