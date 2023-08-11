@@ -16,13 +16,16 @@ from fastapi import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
+from web3 import Web3
 
 from auth.utils.data_models import RateLimitAuthCheck
 from auth.utils.data_models import UserStatusEnum
 from auth.utils.helpers import inject_rate_limit_fail_response
 from auth.utils.helpers import rate_limit_auth_check
+from data_models import AccountIdentifier
 from data_models import GenericTxnIssue
 from data_models import Message
+from data_models import SnapshotterIdentifier
 from data_models import SnapshotterIssue
 from data_models import SnapshotterPing
 from data_models import SnapshotterPingResponse
@@ -138,6 +141,11 @@ async def report_issue(
 
     time_of_reporting = int(time.time())
     req_parsed.timeOfReporting = str(time_of_reporting)
+    try:
+        req_parsed.instanceID = Web3.to_checksum_address(req_parsed.instanceID)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
+
     await request.app.state.writer_redis_pool.zadd(
         name=get_snapshotter_issues_reported_key(
             snapshotter_id=req_parsed.instanceID,
@@ -177,6 +185,10 @@ async def report_generic_txn_issue(
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
 
     reporting_address = req_parsed.accountAddress
+    try:
+        reporting_address = Web3.to_checksum_address(reporting_address)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid accountAddress.'})
 
     time_of_reporting = int(time.time())
 
@@ -217,6 +229,11 @@ async def ping(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
 
+    try:
+        req_parsed.instanceID = Web3.to_checksum_address(req_parsed.instanceID)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
+
     # add/update instanceID to zset with current time as ping time
     await request.app.state.writer_redis_pool.zadd(
         name=get_snapshotters_status_zset(),
@@ -229,12 +246,12 @@ async def ping(
     )
 
 
-@app.get(
+@app.post(
     '/metrics/activeSnapshotters/{time_window}',
     response_model=List[SnapshotterPingResponse],
     responses={404: {'model': Message}},
 )
-async def get_snapshotters_status(
+async def get_snapshotters_status_post(
     time_window: int,
     request: Request,
     response: Response,
@@ -271,12 +288,12 @@ async def get_snapshotters_status(
     return snapshotters_status
 
 
-@app.get(
+@app.post(
     '/metrics/inactiveSnapshotters/{time_window}',
     response_model=List[SnapshotterPingResponse],
     responses={404: {'model': Message}},
 )
-async def get_inactive_snapshotters_status(
+async def get_inactive_snapshotters_status_post(
     time_window: int,
     request: Request,
     response: Response,
@@ -314,30 +331,35 @@ async def get_inactive_snapshotters_status(
     return snapshotters_status
 
 
-@app.get(
-    '/metrics/{snapshotter_id}/issues/{time_window}}',
+@app.post(
+    '/metrics/issues/{time_window}',
     response_model=List[SnapshotterIssue],
     responses={404: {'model': Message}},
 )
-async def get_snapshotter_issues(
-        snapshotter_id: str,
-        time_window: int,
-        request: Request,
-        response: Response,
-        rate_limit_auth_dep: RateLimitAuthCheck = Depends(
-            rate_limit_auth_check,
-        ),
+async def get_snapshotter_issues_post(
+    time_window: int,
+    request: Request,
+    req_parsed: SnapshotterIdentifier,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+    ),
 ):
+
     """
     Get issues reported by a snapshotter in time window
     """
     if not (
-            rate_limit_auth_dep.rate_limit_passed and
-            rate_limit_auth_dep.authorized and
-            rate_limit_auth_dep.owner.active == UserStatusEnum.active
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
+
+    snapshotter_id = req_parsed.instanceId
+    # create a masked version of snapshotter_id
+    snapshotter_id_masked = snapshotter_id[:6] + '*********************' + snapshotter_id[-6:]
 
     issues = await redis_conn.zrevrangebyscore(
         name=get_snapshotter_issues_reported_key(
@@ -350,21 +372,21 @@ async def get_snapshotter_issues(
 
     issues_reports = []
     for issue in issues:
-        issues_reports.append(SnapshotterIssue(**json.loads(issue)))
+        issue_parsed = SnapshotterIssue(**json.loads(issue))
+        issue_parsed.instanceID = snapshotter_id_masked
+        issues_reports.append(issue_parsed)
     return issues_reports
 
-# get generic txn issues reported by a snapshotter
 
-
-@app.get(
-    '/metrics/{account_address}/genericTxnIssues/{time_window}}',
+@app.post(
+    '/metrics/genericTxnIssues/{time_window}',
     response_model=List[GenericTxnIssue],
     responses={404: {'model': Message}},
 )
-async def get_generic_txn_issues(
-        account_address: str,
+async def get_generic_txn_issues_post(
         time_window: int,
         request: Request,
+        req_parsed: AccountIdentifier,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(
             rate_limit_auth_check,
@@ -373,15 +395,17 @@ async def get_generic_txn_issues(
     """
     Get generic txn issues reported by a snapshotter in time window
     """
-
     if not (
             rate_limit_auth_dep.rate_limit_passed and
             rate_limit_auth_dep.authorized and
             rate_limit_auth_dep.owner.active == UserStatusEnum.active
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
-
     redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
+
+    account_address = req_parsed.accountAddress
+
+    account_address_masked = account_address[:6] + '*********************' + account_address[-6:]
 
     issues = await redis_conn.zrevrangebyscore(
         name=get_generic_txn_issues_reported_key(
@@ -394,6 +418,7 @@ async def get_generic_txn_issues(
 
     issues_reports = []
     for issue in issues:
-        issues_reports.append(GenericTxnIssue(**json.loads(issue)))
-
+        issue_parsed = GenericTxnIssue(**json.loads(issue))
+        issue_parsed.accountAddress = account_address_masked
+        issues_reports.append(issue_parsed)
     return issues_reports

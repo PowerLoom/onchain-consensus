@@ -164,3 +164,11 @@ class GenericTxnIssue(BaseModel):
     epochBegin: Optional[str]
     epochId: Optional[str]
     extra: Optional[str] = ''
+
+
+class SnapshotterIdentifier(BaseModel):
+    instanceId: str
+
+
+class AccountIdentifier(BaseModel):
+    accountAddress: str
