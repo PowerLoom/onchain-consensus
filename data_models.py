@@ -92,12 +92,18 @@ class RLimit(BaseModel):
     file_descriptors: int
 
 
+class ReportingConfig(BaseModel):
+    slack_url: str
+    service_url: str
+
+
 class SettingsConf(BaseModel):
     consensus_service: ConsensusService
     redis: RedisConfig
     chain: ChainConfig
     anchor_chain: AnchorChainConfig
     rate_limit: str
+    reporting: ReportingConfig
     rlimit: RLimit
     ticker_begin_block: Optional[int]
     protocol_state_address: str
@@ -125,6 +131,15 @@ class SnapshotterIssue(BaseModel):
     extra: Optional[str] = ''
 
 
+class SnapshotterPing(BaseModel):
+    instanceID: str
+
+
+class SnapshotterPingResponse(BaseModel):
+    instanceID: str
+    timeOfReporting: int
+
+
 class UserStatusEnum(str, Enum):
     active = 'active'
     inactive = 'inactive'
@@ -140,3 +155,12 @@ class SnapshotterMetadata(BaseModel):
     email: str
     alias: str
     uuid: Optional[str] = None
+
+
+class GenericTxnIssue(BaseModel):
+    accountAddress: str
+    issueType: str
+    projectId: Optional[str]
+    epochBegin: Optional[str]
+    epochId: Optional[str]
+    extra: Optional[str] = ''

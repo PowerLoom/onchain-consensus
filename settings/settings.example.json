@@ -14,6 +14,10 @@
 		"db": 0,
 		"password": null
 	},
+	"reporting": {
+		"slack_url": "https://slack-reporting-url",
+		"service_url": "https://powerloom-reporting-url"
+	},
 	"chain":{
 		"rpc": {
 			"full_nodes": [{

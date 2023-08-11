@@ -21,9 +21,14 @@ from auth.utils.data_models import RateLimitAuthCheck
 from auth.utils.data_models import UserStatusEnum
 from auth.utils.helpers import inject_rate_limit_fail_response
 from auth.utils.helpers import rate_limit_auth_check
+from data_models import GenericTxnIssue
 from data_models import Message
 from data_models import SnapshotterIssue
+from data_models import SnapshotterPing
+from data_models import SnapshotterPingResponse
+from helpers.redis_keys import get_generic_txn_issues_reported_key
 from helpers.redis_keys import get_snapshotter_issues_reported_key
+from helpers.redis_keys import get_snapshotters_status_zset
 from settings.conf import settings
 from utils.default_logger import logger
 from utils.rate_limiter import load_rate_limiter_scripts
@@ -121,6 +126,9 @@ async def report_issue(
             rate_limit_auth_check,
         ),
 ):
+    """
+    Report issue from a snapshotter
+    """
     if not (
             rate_limit_auth_dep.rate_limit_passed and
             rate_limit_auth_dep.authorized and
@@ -128,15 +136,13 @@ async def report_issue(
     ):
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
 
-    # TODO: Basic ip based check for now, do a snapshotter ID check by getting snapshotters from contract if necessary
-
-    # Updating time of reporting to avoid manual incorrect time manipulation
-    req_parsed.timeOfReporting = int(time.time())
+    time_of_reporting = int(time.time())
+    req_parsed.timeOfReporting = str(time_of_reporting)
     await request.app.state.writer_redis_pool.zadd(
         name=get_snapshotter_issues_reported_key(
             snapshotter_id=req_parsed.instanceID,
         ),
-        mapping={json.dumps(req_parsed.dict()): req_parsed.timeOfReporting},
+        mapping={json.dumps(req_parsed.dict()): time_of_reporting},
     )
 
     # pruning expired items
@@ -147,22 +153,184 @@ async def report_issue(
         int(time.time()) - (7 * 24 * 60 * 60),
     )
 
-    return JSONResponse(status_code=200, content={'message': f'Reported Issue.'})
+    return JSONResponse(status_code=200, content={'message': 'Reported Issue.'})
+
+
+# report issues from epoch generator or force consensus
+@app.post('/reportGenericTxnIssue')
+async def report_generic_txn_issue(
+        request: Request,
+        req_parsed: GenericTxnIssue,
+        response: Response,
+        rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+            rate_limit_auth_check,
+        ),
+):
+    """
+    Report issue from Epoch Generator or Force Consensus
+    """
+    if not (
+            rate_limit_auth_dep.rate_limit_passed and
+            rate_limit_auth_dep.authorized and
+            rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+
+    reporting_address = req_parsed.accountAddress
+
+    time_of_reporting = int(time.time())
+
+    await request.app.state.writer_redis_pool.zadd(
+        name=get_generic_txn_issues_reported_key(
+            account_address=reporting_address,
+        ),
+        mapping={json.dumps(req_parsed.dict()): time_of_reporting},
+    )
+
+    # pruning expired items
+    await request.app.state.writer_redis_pool.zremrangebyscore(
+        get_generic_txn_issues_reported_key(
+            account_address=reporting_address,
+        ), 0,
+        int(time.time()) - (7 * 24 * 60 * 60),
+    )
+
+    return JSONResponse(status_code=200, content={'message': 'Reported Issue.'})
+
+
+@app.post('/ping')
+async def ping(
+        request: Request,
+        req_parsed: SnapshotterPing,
+        response: Response,
+        rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+            rate_limit_auth_check,
+        ),
+):
+    """
+    Ping from a snapshotter, helps in determining active/inactive snapshotters
+    """
+    if not (
+            rate_limit_auth_dep.rate_limit_passed and
+            rate_limit_auth_dep.authorized and
+            rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+
+    # add/update instanceID to zset with current time as ping time
+    await request.app.state.writer_redis_pool.zadd(
+        name=get_snapshotters_status_zset(),
+        mapping={req_parsed.instanceID: int(time.time())},
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={'message': 'Ping Successful!'},
+    )
 
 
 @app.get(
-    '/metrics/{snapshotter_alias}/issues',
+    '/metrics/activeSnapshotters/{time_window}',
+    response_model=List[SnapshotterPingResponse],
+    responses={404: {'model': Message}},
+)
+async def get_snapshotters_status(
+    time_window: int,
+    request: Request,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+    ),
+):
+    """
+    Get snapshotters which submitted ping in time window
+    """
+    if not (
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
+
+    # get snapshotters which submitted ping in time window
+    active_snapshotters = await redis_conn.zrevrangebyscore(
+        name=get_snapshotters_status_zset(),
+        max=int(time.time()),
+        min=int(time.time()) - time_window,
+        withscores=True,
+    )
+
+    snapshotters_status = []
+    for snapshotter, ping_time in active_snapshotters:
+        snapshotters_status.append(
+            SnapshotterPingResponse(
+                instanceID=snapshotter.decode(), timeOfReporting=int(ping_time),
+            ),
+        )
+    return snapshotters_status
+
+
+@app.get(
+    '/metrics/inactiveSnapshotters/{time_window}',
+    response_model=List[SnapshotterPingResponse],
+    responses={404: {'model': Message}},
+)
+async def get_inactive_snapshotters_status(
+    time_window: int,
+    request: Request,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+    ),
+):
+    """
+    Get snapshotters which did not submit ping in time window
+    """
+    if not (
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+
+    redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
+
+    # get snapshotters who did not submit ping in time window
+    inactive_snapshotters = await redis_conn.zrevrangebyscore(
+        name=get_snapshotters_status_zset(),
+        max=int(time.time()) - time_window,
+        min=0,
+        withscores=True,
+    )
+
+    snapshotters_status = []
+    for snapshotter, ping_time in inactive_snapshotters:
+        snapshotters_status.append(
+            SnapshotterPingResponse(
+                instanceID=snapshotter.decode(), timeOfReporting=int(ping_time),
+            ),
+        )
+    return snapshotters_status
+
+
+@app.get(
+    '/metrics/{snapshotter_id}/issues/{time_window}}',
     response_model=List[SnapshotterIssue],
     responses={404: {'model': Message}},
 )
 async def get_snapshotter_issues(
         snapshotter_id: str,
+        time_window: int,
         request: Request,
         response: Response,
         rate_limit_auth_dep: RateLimitAuthCheck = Depends(
             rate_limit_auth_check,
         ),
 ):
+    """
+    Get issues reported by a snapshotter in time window
+    """
     if not (
             rate_limit_auth_dep.rate_limit_passed and
             rate_limit_auth_dep.authorized and
@@ -171,10 +339,61 @@ async def get_snapshotter_issues(
         return inject_rate_limit_fail_response(rate_limit_auth_dep)
     redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
 
-    issues = await redis_conn.zrevrange(
-        get_snapshotter_issues_reported_key(snapshotter_id), 0, -1, withscores=False,
+    issues = await redis_conn.zrevrangebyscore(
+        name=get_snapshotter_issues_reported_key(
+            snapshotter_id=snapshotter_id,
+        ),
+        max=int(time.time()),
+        min=int(time.time()) - time_window,
+        withscores=False,
     )
+
     issues_reports = []
     for issue in issues:
         issues_reports.append(SnapshotterIssue(**json.loads(issue)))
+    return issues_reports
+
+# get generic txn issues reported by a snapshotter
+
+
+@app.get(
+    '/metrics/{account_address}/genericTxnIssues/{time_window}}',
+    response_model=List[GenericTxnIssue],
+    responses={404: {'model': Message}},
+)
+async def get_generic_txn_issues(
+        account_address: str,
+        time_window: int,
+        request: Request,
+        response: Response,
+        rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+            rate_limit_auth_check,
+        ),
+):
+    """
+    Get generic txn issues reported by a snapshotter in time window
+    """
+
+    if not (
+            rate_limit_auth_dep.rate_limit_passed and
+            rate_limit_auth_dep.authorized and
+            rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+
+    redis_conn: aioredis.Redis = request.app.state.reader_redis_pool
+
+    issues = await redis_conn.zrevrangebyscore(
+        name=get_generic_txn_issues_reported_key(
+            account_address=account_address,
+        ),
+        max=int(time.time()),
+        min=int(time.time()) - time_window,
+        withscores=False,
+    )
+
+    issues_reports = []
+    for issue in issues:
+        issues_reports.append(GenericTxnIssue(**json.loads(issue)))
+
     return issues_reports

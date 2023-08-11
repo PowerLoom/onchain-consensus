@@ -10,6 +10,16 @@ def get_snapshotter_issues_reported_key(snapshotter_id):
     return f'snapshotterData:{snapshotter_id}:issuesReported'
 
 
+def get_generic_txn_issues_reported_key(account_address):
+    return f'genericTxnData:{account_address}:issuesReported'
+
+# sorted set
+
+
+def get_snapshotters_status_zset():
+    return 'SnapshotterStatus'
+
+
 # string key:value pair that holds jsonified metadata on UUID peers
 def get_snapshotter_info_key(alias):
     return f'snapshotterInfo:{alias}'

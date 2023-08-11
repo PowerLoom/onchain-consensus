@@ -6,20 +6,25 @@ import time
 
 import aiorwlock
 import uvloop
+from httpx import AsyncClient
+from httpx import AsyncHTTPTransport
+from httpx import Limits
+from httpx import Timeout
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
 from web3 import AsyncHTTPProvider
 from web3 import AsyncWeb3
 
+from data_models import GenericTxnIssue
 from helpers.redis_keys import event_detector_last_processed_block
 from rpc import get_event_sig_and_abi
 from rpc import RpcHelper
 from settings.conf import settings
 from utils.default_logger import logger
+from utils.notification_utils import send_failure_notifications
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 from utils.transaction_utils import write_transaction_with_receipt
-
 protocol_state_contract_address = settings.protocol_state_address
 
 # load abi from json file and create contract object
@@ -109,6 +114,23 @@ class ForceConsensus:
         self._nonce = await w3.eth.get_transaction_count(
             settings.force_consensus_address,
         )
+        await self._init_httpx_client()
+
+    async def _init_httpx_client(self):
+        if self._async_transport is not None:
+            return
+        self._async_transport = AsyncHTTPTransport(
+            limits=Limits(
+                max_connections=100,
+                max_keepalive_connections=50,
+                keepalive_expiry=None,
+            ),
+        )
+        self._client = AsyncClient(
+            timeout=Timeout(timeout=5.0),
+            follow_redirects=False,
+            transport=self._async_transport,
+        )
 
     async def _call_force_complete_consensus(self, project, epochId):
         async with self._semaphore:
@@ -136,6 +158,20 @@ class ForceConsensus:
                                 self._logger.error(
                                     'Unable to force complete consensus for project: {}, error: {}',
                                 )
+
+                                issue = GenericTxnIssue(
+                                    accountAddress=settings.force_consensus_address,
+                                    epochId=epochId,
+                                    issueType='ForceConsensusTxnFailed',
+                                    projectId=project,
+                                    extra=json.dumps(receipt),
+                                )
+
+                                await send_failure_notifications(
+                                    client=self._client,
+                                    issue=issue,
+                                )
+
                                 time.sleep(5)
                                 self._nonce = await w3.eth.get_transaction_count(
                                     settings.force_consensus_address,
@@ -161,10 +197,24 @@ class ForceConsensus:
                     self._logger.error(
                         'Unable to force complete consensus for project: {}, error: {}', project, ex,
                     )
+
+                    issue = GenericTxnIssue(
+                        accountAddress=settings.force_consensus_address,
+                        epochId=epochId,
+                        issueType='ForceConsensusTxnFailed',
+                        projectId=project,
+                        extra=str(ex),
+                    )
+
+                    await send_failure_notifications(
+                        client=self._client,
+                        issue=issue,
+                    )
                     # reset nonce
                     async with self._rwlock.writer_lock:
                         # sleep for 5 seconds to avoid nonce collision
-                        await asyncio.sleep(5)
+
+                        time.sleep(5)
                         self._nonce = await w3.eth.get_transaction_count(
                             settings.force_consensus_address,
                         )
