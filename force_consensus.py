@@ -3,6 +3,7 @@ import json
 import random
 import threading
 import time
+from collections import defaultdict
 
 import aiorwlock
 import uvloop
@@ -59,13 +60,19 @@ class ForceConsensus:
         self._last_processed_block = 0
         self._client = None
         self._async_transport = None
+        self._projects = set()
+        self._finalized_epochs = defaultdict(set)
 
         EVENTS_ABI = {
             'EpochReleased': protocol_state_contract.events.EpochReleased._get_event_abi(),
+            'SnapshotFinalized': protocol_state_contract.events.SnapshotFinalized._get_event_abi(),
+            'ProjectsUpdated': protocol_state_contract.events.ProjectsUpdated._get_event_abi(),
         }
 
         EVENT_SIGS = {
             'EpochReleased': 'EpochReleased(uint256,uint256,uint256,uint256)',
+            'SnapshotFinalized': 'SnapshotFinalized(uint256,uint256,string,string,uint256)',
+            'ProjectsUpdated': 'ProjectsUpdated(string,bool,uint256)',
         }
 
         self.event_sig, self.event_abi = get_event_sig_and_abi(
@@ -96,6 +103,13 @@ class ForceConsensus:
         for log in events_log:
             if log['event'] == 'EpochReleased':
                 self._pending_epochs.add((time.time(), log['args']['epochId']))
+            elif log['event'] == 'ProjectsUpdated':
+                if log['args']['allowed']:
+                    self._projects.add(log['args']['projectId'])
+                else:
+                    self._projects.discard(log['args']['projectId'])
+            elif log['event'] == 'SnapshotFinalized':
+                self._finalized_epochs[log['args']['epochId']].add(log['args']['projectId'])
 
         asyncio.ensure_future(self._force_complete_consensus())
 
@@ -240,17 +254,19 @@ class ForceConsensus:
 
         self._logger.info('Processing Epochs {}', epochs_to_process)
         if epochs_to_process:
-            projects = await protocol_state_contract.functions.getProjects().call()
-            self._logger.info(
-                'Force completing consensus for projects: {}', projects,
-            )
 
             txn_tasks = []
             for epochId in epochs_to_process:
-                for project in projects:
+                self._logger.info(
+                    'Force completing consensus for projects: {}', self._projects - self._finalized_epochs[epochId],
+                )
+
+                for project in self._projects - self._finalized_epochs[epochId]:
                     txn_tasks.append(self._call_force_complete_consensus(project, epochId))
 
             results = await asyncio.gather(*txn_tasks, return_exceptions=True)
+
+            del self._finalized_epochs[epochId]
 
             for result in results:
                 if isinstance(result, Exception):
@@ -264,6 +280,9 @@ class ForceConsensus:
 
         if self._submission_window == 0:
             self._submission_window = await protocol_state_contract.functions.snapshotSubmissionWindow().call()
+
+        if not self._projects:
+            self._projects = set(await protocol_state_contract.functions.getProjects().call())
 
         while True:
             try:
