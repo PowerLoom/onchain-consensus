@@ -129,7 +129,7 @@ class ForceConsensus:
             ),
         )
         self._client = AsyncClient(
-            timeout=Timeout(timeout=5.0),
+            timeout=Timeout(timeout=30.0),
             follow_redirects=False,
             transport=self._async_transport,
         )
@@ -171,14 +171,14 @@ class ForceConsensus:
 
                                 await send_failure_notifications(
                                     client=self._client,
-                                    issue=issue,
+                                    message=issue,
                                 )
 
                                 time.sleep(5)
                                 self._nonce = await w3.eth.get_transaction_count(
                                     settings.force_consensus_address,
                                 )
-                                return
+                                raise Exception('Transaction failed!')
                         else:
 
                             tx_hash = await write_transaction(
@@ -210,7 +210,7 @@ class ForceConsensus:
 
                     await send_failure_notifications(
                         client=self._client,
-                        issue=issue,
+                        message=issue,
                     )
                     # reset nonce
                     async with self._rwlock.writer_lock:
@@ -220,6 +220,8 @@ class ForceConsensus:
                         self._nonce = await w3.eth.get_transaction_count(
                             settings.force_consensus_address,
                         )
+
+                        raise ex
             else:
                 self._logger.info(
                     'Consensus already achieved for project: {}', project,
