@@ -10,12 +10,17 @@ alt transaction_task for project and epochId from TxnTasks
             ForceConsensus -> RWLock : Acquire write lock
             RWLock --> ForceConsensus : Write lock acquired
 
-            ForceConsensus -> ProtocolStateContract : Force consensus
-            alt consensus forced successfully
-                ForceConsensus -> ForceConsensus : Log success message
-            else consensus could not be forced
-                ForceConsensus -> ForceConsensus : Log error message
-                ForceConsensus -> ForceConsensus : Reset Nonce
+            alt 99% of the time
+                ForceConsensus -> ProtocolStateContract : Force consensus
+
+            else 1% of the time
+                ForceConsensus -> ProtocolStateContract : Force Consensus and wait for txn receipt
+                alt txn successful
+                    ForceConsensus -> ForceConsensus : Log info message
+                else txn failed
+                    ForceConsensus -> ForceConsensus : Log info message
+                    ForceConsensus -> ForceConsensus : Reset Nonce
+                end
             end
 
             ForceConsensus -> RWLock : Release write lock

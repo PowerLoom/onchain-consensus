@@ -11,11 +11,16 @@ from signal import SIGQUIT
 from signal import SIGTERM
 
 import uvloop
+from httpx import AsyncClient
+from httpx import AsyncHTTPTransport
+from httpx import Limits
+from httpx import Timeout
 from redis import asyncio as aioredis
 from setproctitle import setproctitle
 from web3 import AsyncHTTPProvider
 from web3 import AsyncWeb3
 
+from data_models import GenericTxnIssue
 from exceptions import GenericExitOnSignal
 from helpers.message_models import RPCNodesObject
 from helpers.redis_keys import get_epoch_generator_epoch_history
@@ -24,19 +29,18 @@ from helpers.rpc_helper import ConstructRPC
 from settings.conf import settings
 from utils.chunk_helper import chunks
 from utils.default_logger import logger
+from utils.notification_utils import send_failure_notifications
 from utils.redis_conn import RedisPool
 from utils.transaction_utils import write_transaction
 from utils.transaction_utils import write_transaction_with_receipt
-
-protocol_state_contract_address = settings.anchor_chain_rpc.protocol_state_address
-
+protocol_state_contract_address = settings.protocol_state_address
 # load abi from json file and create contract object
 with open('utils/static/abi.json', 'r') as f:
     abi = json.load(f)
 
-w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain_rpc.full_nodes[0].url))
+w3 = AsyncWeb3(AsyncHTTPProvider(settings.anchor_chain.rpc.full_nodes[0].url))
 protocol_state_contract = w3.eth.contract(
-    address=settings.anchor_chain_rpc.protocol_state_address, abi=abi,
+    address=settings.protocol_state_address, abi=abi,
 )
 
 
@@ -69,7 +73,7 @@ class EpochGenerator:
     _reader_redis_pool: aioredis.Redis
     _writer_redis_pool: aioredis.Redis
 
-    def __init__(self, name='PowerLoom|OnChainConsensus|EpochGenerator', simulation_mode=False):
+    def __init__(self, name='PowerLoom|OnChainConsensus|EpochGenerator'):
         self.name = name
         setproctitle(self.name)
         self._logger = logger.bind(module=self.name)
@@ -77,16 +81,35 @@ class EpochGenerator:
         self.last_sent_block = 0
         self._end = None
         self._nonce = -1
+        self._async_transport = None
+        self._client = None
 
     async def setup(self):
         self._aioredis_pool = RedisPool(writer_redis_conf=settings.redis)
         self._nonce = await w3.eth.get_transaction_count(
-            settings.anchor_chain_rpc.validator_epoch_address,
+            settings.validator_epoch_address,
         )
         await self._aioredis_pool.populate()
         self._reader_redis_pool = self._aioredis_pool.reader_redis_pool
         self._writer_redis_pool = self._aioredis_pool.writer_redis_pool
         self.redis_thread: threading.Thread
+        await self._init_httpx_client()
+
+    async def _init_httpx_client(self):
+        if self._async_transport is not None:
+            return
+        self._async_transport = AsyncHTTPTransport(
+            limits=Limits(
+                max_connections=100,
+                max_keepalive_connections=50,
+                keepalive_expiry=None,
+            ),
+        )
+        self._client = AsyncClient(
+            timeout=Timeout(timeout=30.0),
+            follow_redirects=False,
+            transport=self._async_transport,
+        )
 
     def _generic_exit_handler(self, signum, sigframe):
         if signum in [SIGINT, SIGTERM, SIGQUIT] and not self._shutdown_initiated:
@@ -126,7 +149,7 @@ class EpochGenerator:
 
         rpc_obj = ConstructRPC(network_id=settings.chain.chain_id)
         rpc_urls = []
-        for node in settings.chain.rpc.nodes:
+        for node in settings.chain.rpc.full_nodes:
             self._logger.debug('node {}', node.url)
             rpc_urls.append(node.url)
         rpc_nodes_obj = RPCNodesObject(
@@ -201,8 +224,8 @@ class EpochGenerator:
                             if rand < 0.1:
                                 tx_hash, receipt = await write_transaction_with_receipt(
                                     w3,
-                                    settings.anchor_chain_rpc.validator_epoch_address,
-                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    settings.validator_epoch_address,
+                                    settings.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self._nonce,
@@ -212,13 +235,23 @@ class EpochGenerator:
 
                                 if receipt['status'] != 1:
                                     self._logger.error(
-                                        'Unable to release epoch, error: {}', receipt['status'],
+                                        'Unable to release epoch, txn failed! Got receipt: {}', receipt,
                                     )
+
+                                    issue = GenericTxnIssue(
+                                        accountAddress=settings.validator_epoch_address,
+                                        epochBegin=epoch_block['begin'],
+                                        issueType='EpochReleaseTxnFailed',
+                                        extra=json.dumps(receipt),
+                                    )
+
+                                    await send_failure_notifications(client=self._client, message=issue)
+
                                     # sleep for 30 seconds to avoid nonce collision
-                                    await asyncio.sleep(30)
+                                    time.sleep(30)
                                     # reset nonce
                                     self._nonce = await w3.eth.get_transaction_count(
-                                        settings.anchor_chain_rpc.validator_epoch_address,
+                                        settings.validator_epoch_address,
                                     )
 
                                     last_contract_epoch = await self._fetch_epoch_from_contract()
@@ -229,8 +262,8 @@ class EpochGenerator:
                             else:
                                 tx_hash = await write_transaction(
                                     w3,
-                                    settings.anchor_chain_rpc.validator_epoch_address,
-                                    settings.anchor_chain_rpc.validator_epoch_private_key,
+                                    settings.validator_epoch_address,
+                                    settings.validator_epoch_private_key,
                                     protocol_state_contract,
                                     'releaseEpoch',
                                     self._nonce,
@@ -246,11 +279,21 @@ class EpochGenerator:
                             self._logger.error(
                                 'Unable to release epoch, error: {}', ex,
                             )
+
+                            issue = GenericTxnIssue(
+                                accountAddress=settings.validator_epoch_address,
+                                epochBegin=epoch_block['begin'],
+                                issueType='EpochReleaseError',
+                                extra=str(ex),
+                            )
+
+                            await send_failure_notifications(client=self._client, message=issue)
+
                             # sleep for 30 seconds to avoid nonce collision
-                            await asyncio.sleep(30)
+                            time.sleep(30)
                             # reset nonce
                             self._nonce = await w3.eth.get_transaction_count(
-                                settings.anchor_chain_rpc.validator_epoch_address,
+                                settings.validator_epoch_address,
                             )
 
                             last_contract_epoch = await self._fetch_epoch_from_contract()

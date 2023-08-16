@@ -1,5 +1,6 @@
 {
     "consensus_service": {
+		"submission_window": 60,
 		"host": "0.0.0.0",
 		"port": 9030,
 		"keys_ttl": 86400,
@@ -13,40 +14,58 @@
 		"db": 0,
 		"password": null
 	},
+	"reporting": {
+		"slack_url": "https://slack-reporting-url",
+		"service_url": "https://powerloom-reporting-url"
+	},
 	"chain":{
 		"rpc": {
-			"nodes": [
-				{
-					"url": "https://**rpc**"
-				}
-			],
-			"retry": 3,
-			"request_timeout": 5
-		},
+			"full_nodes": [{
+			  "url": "https://**rpc**",
+			  "rate_limit": "100000000/day;20000/minute;500/second"
+			}],
+			"archive_nodes": [],
+			"force_archive_blocks": 100,
+			"retry": 5,
+			"request_time_out": 5,
+			"connection_limits":{
+			  "max_connections": 100,
+			  "max_keepalive_connections": 50,
+			  "keepalive_expiry": 300
+			}
+		  },
 		"chain_id":1,
 		"epoch": {
 			"height": 10,
 			"head_offset": 2,
-			"block_time": 15,
+			"block_time": 12,
 			"history_length": 1000
 		}
 	},
-	"anchor_chain_rpc": {
-		"full_nodes": [{
-		  "url": "https://rpc-url",
-		  "rate_limit": "10000000/day;2000/minute;100/second"
-		}],
-		"chain_id": 11155111,
-		"protocol_state_address": "0x000000",
-		"validator_epoch_address": "0x000000",
-		"validator_epoch_private_key": "0x000000",
-		"force_consensus_address": "0x000000",
-		"force_consensus_private_key": "0x000000",
-		"retry": 5,
-		"request_time_out": 5
+	"anchor_chain": {
+		"rpc": {
+			"full_nodes": [{
+			  "url": "https://rpc-url",
+			  "rate_limit": "100000000/day;18000/minute;300/second"
+			}],
+			"retry": 5,
+			"request_time_out": 5,
+			"connection_limits":{
+			  "max_connections": 100,
+			  "max_keepalive_connections": 50,
+			  "keepalive_expiry": 300
+			}
+		  },
+		"chain_id": 102,
+		"polling_interval":2
 	},
 	"rlimit": {
 		"file_descriptors": 2048
 	},
+	"protocol_state_address": "0x000000",
+	"validator_epoch_address": "0x000000",
+	"validator_epoch_private_key": "0x000000",
+	"force_consensus_address": "0x000000",
+	"force_consensus_private_key": "0x000000",
 	"ticker_begin_block": 0
 }
