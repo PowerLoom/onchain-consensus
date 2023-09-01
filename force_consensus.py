@@ -282,8 +282,9 @@ class ForceConsensus:
             self._submission_window = await protocol_state_contract.functions.snapshotSubmissionWindow().call()
 
         if not self._projects:
-            self._projects = set(await protocol_state_contract.functions.getProjects().call())
-
+            projects_all = set(await protocol_state_contract.functions.getProjects().call())
+            projects_pretest = set(await protocol_state_contract.functions.getPretestProjects().call())
+            self._projects = projects_all + projects_pretest
         while True:
             try:
                 current_block = await self.rpc_helper.get_current_block(redis_conn=self._writer_redis_pool)
