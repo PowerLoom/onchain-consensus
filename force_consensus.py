@@ -62,17 +62,20 @@ class ForceConsensus:
         self._async_transport = None
         self._projects = set()
         self._finalized_epochs = defaultdict(set)
+        self._submitted_projects_for_epoch = defaultdict(set)
 
         EVENTS_ABI = {
             'EpochReleased': protocol_state_contract.events.EpochReleased._get_event_abi(),
             'SnapshotFinalized': protocol_state_contract.events.SnapshotFinalized._get_event_abi(),
             'ProjectsUpdated': protocol_state_contract.events.ProjectsUpdated._get_event_abi(),
+            'SnapshotSubmitted': protocol_state_contract.events.SnapshotSubmitted._get_event_abi(),
         }
 
         EVENT_SIGS = {
             'EpochReleased': 'EpochReleased(uint256,uint256,uint256,uint256)',
             'SnapshotFinalized': 'SnapshotFinalized(uint256,uint256,string,string,uint256)',
             'ProjectsUpdated': 'ProjectsUpdated(string,bool,uint256)',
+            'SnapshotSubmitted': 'SnapshotSubmitted(address,string,uint256,string,uint256)',
         }
 
         self.event_sig, self.event_abi = get_event_sig_and_abi(
@@ -110,6 +113,8 @@ class ForceConsensus:
                     self._projects.discard(log['args']['projectId'])
             elif log['event'] == 'SnapshotFinalized':
                 self._finalized_epochs[log['args']['epochId']].add(log['args']['projectId'])
+            elif log['event'] == 'SnapshotSubmitted':
+                self._submitted_projects_for_epoch[log['args']['epochId']].add(log['args']['projectId'])
 
         asyncio.ensure_future(self._force_complete_consensus())
 
@@ -257,16 +262,19 @@ class ForceConsensus:
 
             txn_tasks = []
             for epochId in epochs_to_process:
+                # only running for projects that received submissions
                 self._logger.info(
-                    'Force completing consensus for projects: {}', self._projects - self._finalized_epochs[epochId],
+                    'Force completing consensus for projects: {}',
+                    self._submitted_projects_for_epoch[epochId] - self._finalized_epochs[epochId],
                 )
 
-                for project in self._projects - self._finalized_epochs[epochId]:
+                for project in self._submitted_projects_for_epoch[epochId] - self._finalized_epochs[epochId]:
                     txn_tasks.append(self._call_force_complete_consensus(project, epochId))
 
             results = await asyncio.gather(*txn_tasks, return_exceptions=True)
 
             del self._finalized_epochs[epochId]
+            del self._submitted_projects_for_epoch[epochId]
 
             for result in results:
                 if isinstance(result, Exception):
