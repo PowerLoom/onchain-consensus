@@ -45,7 +45,7 @@
 		"anonymous": false,
 		"inputs": [
 			{
-				"indexed": false,
+				"indexed": true,
 				"internalType": "address",
 				"name": "snapshotterAddr",
 				"type": "address"
@@ -214,13 +214,6 @@
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "renounceOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
 		"anonymous": false,
 		"inputs": [
 			{
@@ -261,7 +254,7 @@
 		"anonymous": false,
 		"inputs": [
 			{
-				"indexed": false,
+				"indexed": true,
 				"internalType": "address",
 				"name": "snapshotterAddr",
 				"type": "address"
@@ -293,19 +286,6 @@
 		],
 		"name": "SnapshotSubmitted",
 		"type": "event"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_minSubmissionsForConsensus",
-				"type": "uint256"
-			}
-		],
-		"name": "updateMinSnapshottersForConsensus",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
 	},
 	{
 		"anonymous": false,
@@ -390,6 +370,13 @@
 		"type": "event"
 	},
 	{
+		"inputs": [],
+		"name": "renounceOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
 		"inputs": [
 			{
 				"internalType": "string",
@@ -460,24 +447,6 @@
 	{
 		"inputs": [
 			{
-				"internalType": "string[]",
-				"name": "_projects",
-				"type": "string[]"
-			},
-			{
-				"internalType": "bool[]",
-				"name": "_status",
-				"type": "bool[]"
-			}
-		],
-		"name": "updateAllProjects",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
 				"internalType": "address[]",
 				"name": "_snapshotters",
 				"type": "address[]"
@@ -496,35 +465,12 @@
 	{
 		"inputs": [
 			{
-				"internalType": "address[]",
-				"name": "_snapshotters",
-				"type": "address[]"
-			},
-			{
-				"internalType": "bool[]",
-				"name": "_status",
-				"type": "bool[]"
+				"internalType": "uint256",
+				"name": "_minSubmissionsForConsensus",
+				"type": "uint256"
 			}
 		],
-		"name": "updateMasterSnapshotters",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string[]",
-				"name": "_projects",
-				"type": "string[]"
-			},
-			{
-				"internalType": "bool[]",
-				"name": "_status",
-				"type": "bool[]"
-			}
-		],
-		"name": "updatePretestProjects",
+		"name": "updateMinSnapshottersForConsensus",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -558,25 +504,6 @@
 		"name": "updateValidators",
 		"outputs": [],
 		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			}
-		],
-		"name": "allProjects",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
 		"type": "function"
 	},
 	{
@@ -659,6 +586,19 @@
 			}
 		],
 		"name": "currentFinalizedSnapshot",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "DeploymentBlockNumber",
 		"outputs": [
 			{
 				"internalType": "uint256",
@@ -755,19 +695,6 @@
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "getBlock",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "string",
@@ -793,64 +720,12 @@
 	},
 	{
 		"inputs": [],
-		"name": "getMasterSnapshotters",
-		"outputs": [
-			{
-				"internalType": "address[]",
-				"name": "",
-				"type": "address[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getPretestProjects",
-		"outputs": [
-			{
-				"internalType": "string[]",
-				"name": "",
-				"type": "string[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getProjects",
-		"outputs": [
-			{
-				"internalType": "string[]",
-				"name": "",
-				"type": "string[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
 		"name": "getSnapshotters",
 		"outputs": [
 			{
 				"internalType": "address[]",
 				"name": "",
 				"type": "address[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getTotalMasterSnapshotterCount",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",
