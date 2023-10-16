@@ -242,7 +242,7 @@ class EpochGenerator:
                                         accountAddress=settings.validator_epoch_address,
                                         epochBegin=epoch_block['begin'],
                                         issueType='EpochReleaseTxnFailed',
-                                        extra=json.dumps(receipt),
+                                        extra={'error': f"Transaction failed with status: {receipt['status']}"},
                                     )
 
                                     await send_failure_notifications(client=self._client, message=issue)
