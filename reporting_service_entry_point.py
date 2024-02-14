@@ -237,7 +237,8 @@ async def ping(
     # add/update instanceID to zset with current time as ping time
     await request.app.state.writer_redis_pool.zadd(
         name=get_snapshotters_status_zset(),
-        mapping={req_parsed.instanceID: int(time.time())},
+        mapping={req_parsed.instanceID + ':' + str(req_parsed.slotId): int(time.time())},
+        
     )
 
     return JSONResponse(
@@ -280,9 +281,10 @@ async def get_snapshotters_status_post(
 
     snapshotters_status = []
     for snapshotter, ping_time in active_snapshotters:
+        snapshotter_info = snapshotter.decode().split(':')
         snapshotters_status.append(
             SnapshotterPingResponse(
-                instanceID=snapshotter.decode(), timeOfReporting=int(ping_time),
+                instanceID=snapshotter_info[0], slotId=snapshotter_info[1], timeOfReporting=int(ping_time),
             ),
         )
     return snapshotters_status
