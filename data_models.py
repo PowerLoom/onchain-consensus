@@ -98,19 +98,13 @@ class ReportingConfig(BaseModel):
 
 
 class SettingsConf(BaseModel):
-    consensus_service: ConsensusService
     redis: RedisConfig
     chain: ChainConfig
     anchor_chain: AnchorChainConfig
     rate_limit: str
     reporting: ReportingConfig
     rlimit: RLimit
-    ticker_begin_block: Optional[int]
-    protocol_state_address: str
-    validator_epoch_address: str
-    validator_epoch_private_key: str
-    force_consensus_address: str
-    force_consensus_private_key: str
+
 
 
 class Epoch(BaseModel):

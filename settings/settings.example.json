@@ -1,12 +1,4 @@
 {
-    "consensus_service": {
-		"submission_window": 60,
-		"host": "0.0.0.0",
-		"port": 9030,
-		"keys_ttl": 86400,
-		"keepalive_secs": 600,
-		"gunicorn_workers": 20
-	},
 	"rate_limit": "100000/day;200/minute;20/second",
 	"redis": {
 		"host": "redis",
@@ -61,11 +53,5 @@
 	},
 	"rlimit": {
 		"file_descriptors": 2048
-	},
-	"protocol_state_address": "0x000000",
-	"validator_epoch_address": "0x000000",
-	"validator_epoch_private_key": "0x000000",
-	"force_consensus_address": "0x000000",
-	"force_consensus_private_key": "0x000000",
-	"ticker_begin_block": 0
+	}
 }
