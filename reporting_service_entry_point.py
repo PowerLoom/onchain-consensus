@@ -284,7 +284,7 @@ async def get_last_ping(
         lastPing = int(lastPing.decode('utf-8'))
     else:
         lastPing = 0
-    return lastPing
+    return JSONResponse(status_code=200, content={'lastPing': lastPing})
 
 
 
