@@ -254,7 +254,7 @@ async def ping(
     )
     
 
-@app.get('/stats/{address}/{slot_id}')
+@app.get('/lastPing/{address}/{slot_id}')
 async def get_last_ping(
     request: Request,
     address: str,
@@ -280,7 +280,10 @@ async def get_last_ping(
     lastPing = await request.app.state.writer_redis_pool.get(
         key
     )
-    
+    if lastPing is not None:
+        lastPing = int(lastPing.decode('utf-8'))
+    else:
+        lastPing = 0
     return lastPing
 
 
