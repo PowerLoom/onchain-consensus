@@ -98,11 +98,9 @@ class ReportingConfig(BaseModel):
 
 
 class SettingsConf(BaseModel):
+    consensus_service: ConsensusService
     redis: RedisConfig
-    chain: ChainConfig
-    anchor_chain: AnchorChainConfig
     rate_limit: str
-    reporting: ReportingConfig
     rlimit: RLimit
 
 
