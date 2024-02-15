@@ -133,10 +133,12 @@ class SnapshotterIssue(BaseModel):
 
 class SnapshotterPing(BaseModel):
     instanceID: str
+    slotId: int
 
 
 class SnapshotterPingResponse(BaseModel):
     instanceID: str
+    slotId: int
     timeOfReporting: int
 
 
