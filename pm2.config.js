@@ -11,7 +11,7 @@ const MIN_UPTIME = 60000;
 module.exports = {
   apps : [
     {
-      name   : "stats-api",
+      name   : "node-info-collector-service",
       script: `poetry run python -m gunicorn_main_launcher`,
       max_restarts: MAX_RESTART,
       min_uptime: MIN_UPTIME,
